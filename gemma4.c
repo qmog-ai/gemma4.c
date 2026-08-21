@@ -164,9 +164,10 @@ typedef struct {
 
 typedef struct {
     float residual[HIDDEN_SIZE];
-    float normalized[HIDDEN_SIZE];
     float hidden[VOCAB_SIZE];
     float auxiliary[8 * HIDDEN_SIZE];
+    int8_t quantized[8 * HIDDEN_SIZE];
+    float activation_scales[8 * HIDDEN_SIZE / 64];
     float per_layer_inputs[NUM_LAYERS * 256];
     float sliding_cache[3][4][2 * SLIDING_WINDOW * 256];
     float full_cache[3][2 * MAX_CONTEXT * 512];
@@ -235,20 +236,37 @@ float weight_scale(const Tensor *weight, int output, int input_group) {
     return fp16_to_float(weight->scales[(size_t)output * groups + input_group]);
 }
 
-void linear(float *output, const float *input, const Tensor *weight) {
+void quantize(int8_t *output, float *scales, const float *input, int width) {
+    for (int group = 0; group < width / 64; group++) {
+        float max_abs = 0.0f;
+        for (int k = 0; k < 64; k++) {
+            float value = fabsf(input[group * 64 + k]);
+            if (value > max_abs) max_abs = value;
+        }
+        float scale = max_abs / 127.0f;
+        float inverse_scale = scale > 0.0f ? 1.0f / scale : 0.0f;
+        for (int k = 0; k < 64; k++) {
+            output[group * 64 + k] = (int8_t)rintf(input[group * 64 + k] * inverse_scale);
+        }
+        scales[group] = scale;
+    }
+}
+
+void matmul_int8(float *output, const int8_t *input, const float *input_scales,
+                 const Tensor *weight) {
     int outputs = weight->shape[0];
     int inputs = weight->shape[1];
     int groups = inputs / 64;
     for (int j = 0; j < outputs; j++) {
         float sum = 0.0f;
         for (int group = 0; group < groups; group++) {
-            float partial = 0.0f;
+            int dot = 0;
             for (int k = 0; k < 64; k++) {
                 int input_index = group * 64 + k;
                 const int8_t *values = weight->data;
-                partial += input[input_index] * (float)values[(size_t)j * inputs + input_index];
+                dot += (int)input[input_index] * (int)values[(size_t)j * inputs + input_index];
             }
-            sum += partial * weight_scale(weight, j, group);
+            sum += (float)dot * input_scales[group] * weight_scale(weight, j, group);
         }
         output[j] = sum;
     }
@@ -325,7 +343,7 @@ void geglu(float *gate, const float *up, int width, const Tensor *gelu_table) {
 // Transformer
 
 void attention(InferenceState *state, const LayerWeights *layers, int layer,
-               int position, const float *input, float *scores) {
+               int position, float *scores) {
     const LayerWeights *weights = &layers[layer];
     int full_attention = layer % 5 == 4;
     int cache_len = full_attention ? MAX_CONTEXT : SLIDING_WINDOW;
@@ -338,7 +356,10 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
                                       : state->sliding_cache[cache_owner / 5][cache_owner % 5];
     float *value_cache = key_cache + (size_t)cache_len * head_dim;
 
-    linear(state->auxiliary, input, &weights->q_proj);
+    quantize(state->quantized, state->activation_scales, state->hidden,
+             weights->q_proj.shape[1]);
+    matmul_int8(state->auxiliary, state->quantized, state->activation_scales,
+                &weights->q_proj);
     rmsnorm(state->auxiliary, state->auxiliary, &weights->q_norm, head_dim, 1e-6f);
     apply_rope(&weights->rope_cos, &weights->rope_sin, state->auxiliary,
                query_width / head_dim, head_dim, position);
@@ -346,8 +367,10 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
     if (weights->k_proj.data) {
         float *new_key = key_cache + ((size_t)position & cache_mask) * head_dim;
         float *new_value = value_cache + ((size_t)position & cache_mask) * head_dim;
-        linear(new_key, input, &weights->k_proj);
-        linear(new_value, input, &weights->v_proj);
+        matmul_int8(new_key, state->quantized, state->activation_scales,
+                    &weights->k_proj);
+        matmul_int8(new_value, state->quantized, state->activation_scales,
+                    &weights->v_proj);
         rmsnorm(new_key, new_key, &weights->k_norm, head_dim, 1e-6f);
         rmsnorm(new_value, new_value, NULL, head_dim, 1e-6f);
         apply_rope(&weights->rope_cos, &weights->rope_sin, new_key, 1, head_dim, position);
@@ -376,7 +399,10 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
             head_output[j] = sum;
         }
     }
-    linear(state->normalized, state->hidden, &weights->o_proj);
+    quantize(state->quantized, state->activation_scales, state->hidden,
+             weights->o_proj.shape[1]);
+    matmul_int8(state->hidden, state->quantized, state->activation_scales,
+                &weights->o_proj);
 }
 
 void forward(Model *model, InferenceState *state, int token, int position) {
@@ -384,8 +410,9 @@ void forward(Model *model, InferenceState *state, int token, int position) {
     float scores[(size_t)position + 1];
 
     embedding(state->residual, &model->weights.embed, token, sqrtf((float)HIDDEN_SIZE));
-    linear(state->per_layer_inputs, state->residual,
-           &model->weights.per_layer_model_projection);
+    quantize(state->quantized, state->activation_scales, state->residual, HIDDEN_SIZE);
+    matmul_int8(state->per_layer_inputs, state->quantized, state->activation_scales,
+                &model->weights.per_layer_model_projection);
     for (int layer = 0; layer < NUM_LAYERS; layer++) {
         float *row = state->per_layer_inputs + layer * per_layer_width;
         rmsnorm(row, row, &model->weights.per_layer_projection_norm,
@@ -401,29 +428,41 @@ void forward(Model *model, InferenceState *state, int token, int position) {
     for (int layer = 0; layer < NUM_LAYERS; layer++) {
         LayerWeights *weights = &model->weights.layers[layer];
 
-        rmsnorm(state->normalized, state->residual, &weights->input_layernorm,
+        rmsnorm(state->hidden, state->residual, &weights->input_layernorm,
                 HIDDEN_SIZE, 1e-6f);
-        attention(state, model->weights.layers, layer, position, state->normalized, scores);
-        rmsnorm(state->hidden, state->normalized, &weights->post_attn_layernorm,
+        attention(state, model->weights.layers, layer, position, scores);
+        rmsnorm(state->hidden, state->hidden, &weights->post_attn_layernorm,
                 HIDDEN_SIZE, 1e-6f);
         for (int i = 0; i < HIDDEN_SIZE; i++) state->residual[i] += state->hidden[i];
 
-        rmsnorm(state->normalized, state->residual, &weights->pre_ffn_layernorm,
+        rmsnorm(state->hidden, state->residual, &weights->pre_ffn_layernorm,
                 HIDDEN_SIZE, 1e-6f);
-        linear(state->hidden, state->normalized, &weights->gate_proj);
-        linear(state->auxiliary, state->normalized, &weights->up_proj);
+        quantize(state->quantized, state->activation_scales, state->hidden,
+                 weights->gate_proj.shape[1]);
+        matmul_int8(state->hidden, state->quantized, state->activation_scales,
+                    &weights->gate_proj);
+        matmul_int8(state->auxiliary, state->quantized, state->activation_scales,
+                    &weights->up_proj);
         geglu(state->hidden, state->auxiliary, weights->gate_proj.shape[0],
               &model->weights.gelu_table);
-        linear(state->normalized, state->hidden, &weights->down_proj);
-        rmsnorm(state->hidden, state->normalized, &weights->post_ffn_layernorm,
+        quantize(state->quantized, state->activation_scales, state->hidden,
+                 weights->down_proj.shape[1]);
+        matmul_int8(state->hidden, state->quantized, state->activation_scales,
+                    &weights->down_proj);
+        rmsnorm(state->hidden, state->hidden, &weights->post_ffn_layernorm,
                 HIDDEN_SIZE, 1e-6f);
         for (int i = 0; i < HIDDEN_SIZE; i++) state->residual[i] += state->hidden[i];
 
-        linear(state->hidden, state->residual, &weights->per_layer_input_gate);
+        quantize(state->quantized, state->activation_scales, state->residual, HIDDEN_SIZE);
+        matmul_int8(state->hidden, state->quantized, state->activation_scales,
+                    &weights->per_layer_input_gate);
         geglu(state->hidden, state->per_layer_inputs + layer * per_layer_width,
               per_layer_width, &model->weights.gelu_table);
-        linear(state->normalized, state->hidden, &weights->per_layer_projection);
-        rmsnorm(state->hidden, state->normalized, &weights->post_per_layer_input_norm,
+        quantize(state->quantized, state->activation_scales, state->hidden,
+                 weights->per_layer_projection.shape[1]);
+        matmul_int8(state->hidden, state->quantized, state->activation_scales,
+                    &weights->per_layer_projection);
+        rmsnorm(state->hidden, state->hidden, &weights->post_per_layer_input_norm,
                 HIDDEN_SIZE, 1e-6f);
         float layer_scale = ((float *)weights->layer_scalar.data)[0];
         for (int i = 0; i < HIDDEN_SIZE; i++) {
@@ -433,9 +472,10 @@ void forward(Model *model, InferenceState *state, int token, int position) {
 }
 
 float *logits(Model *model, InferenceState *state) {
-    rmsnorm(state->normalized, state->residual, &model->weights.norm,
-            HIDDEN_SIZE, 1e-6f);
-    linear(state->hidden, state->normalized, &model->weights.embed);
+    rmsnorm(state->hidden, state->residual, &model->weights.norm, HIDDEN_SIZE, 1e-6f);
+    quantize(state->quantized, state->activation_scales, state->hidden, HIDDEN_SIZE);
+    matmul_int8(state->hidden, state->quantized, state->activation_scales,
+                &model->weights.embed);
     for (int i = 0; i < VOCAB_SIZE; i++) {
         state->hidden[i] = 30.0f * tanhf(state->hidden[i] / 30.0f);
     }
