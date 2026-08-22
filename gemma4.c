@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <omp.h>
+#include <immintrin.h>
 
 #define NUM_LAYERS 35
 #define HIDDEN_SIZE 1536
@@ -196,14 +197,43 @@ float half_to_float(uint16_t half) {
     return value;
 }
 
-// Accumulates each 64-value int8 group into an int32 before applying its two scales.
+// Horizontally reduces eight int32 lanes.
+static inline int32_t horizontal_sum_i32x8(__m256i values) {
+    __m128i sum = _mm_add_epi32(_mm256_castsi256_si128(values), _mm256_extracti128_si256(values, 1));
+    sum = _mm_hadd_epi32(sum, sum);
+    sum = _mm_hadd_epi32(sum, sum);
+    return _mm_cvtsi128_si32(sum);
+}
+
+// Computes one signed int8 dot product. Lanes follow the input dimension;
+// only one output row is active at a time.
+#if defined(__AVX512VNNI__)
+static inline int32_t dot64_row(const int8_t *input, const int8_t *weights) {
+    __m512i dot = _mm512_setzero_si512();
+    for (int k = 0; k < 64; k += 32) {
+        __m512i input16 = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(input + k)));
+        __m512i weight16 = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
+        dot = _mm512_dpwssd_epi32(dot, input16, weight16);
+    }
+    return _mm512_reduce_add_epi32(dot);
+}
+#else
+static inline int32_t dot64_row(const int8_t *input, const int8_t *weights) {
+    __m256i dot = _mm256_setzero_si256();
+    for (int k = 0; k < 64; k += 16) {
+        __m256i input16 = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(input + k)));
+        __m256i weight16 = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
+        dot = _mm256_add_epi32(dot, _mm256_madd_epi16(input16, weight16));
+    }
+    return horizontal_sum_i32x8(dot);
+}
+#endif
 
 static inline float scalar_weight_scale(const Tensor *weight, size_t output, size_t input_group) {
     size_t groups = (size_t)weight->shape[1] / 64;
     return half_to_float(weight->scales[output * groups + input_group]);
 }
 
-__attribute__((optimize("no-tree-vectorize")))
 void matmul_int8(float *output, const int8_t *input_q, const float *input_scales,
                  const Tensor *weight, size_t rows) {
     size_t outputs = (size_t)weight->shape[0];
@@ -215,12 +245,9 @@ void matmul_int8(float *output, const int8_t *input_q, const float *input_scales
         for (size_t out = 0; out < outputs; out++) {
             float sum = 0.0f;
             for (size_t group = 0; group < groups; group++) {
-                int32_t dot = 0;
-                for (size_t k = 0; k < 64; k++) {
-                    size_t input_index = group * 64 + k;
-                    dot += (int32_t)input_q[row * inputs + input_index]
-                         * (int32_t)weights[out * inputs + input_index];
-                }
+                const int8_t *input_group = input_q + row * inputs + group * 64;
+                const int8_t *weight_group = weights + out * inputs + group * 64;
+                int32_t dot = dot64_row(input_group, weight_group);
                 sum += (float)dot * input_scales[row * groups + group]
                      * scalar_weight_scale(weight, out, group);
             }
