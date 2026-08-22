@@ -1,0 +1,8 @@
+*.mog
+/run
+/run-*
+.venv
+__pycache__/
+*.o
+.DS_Store
+gemma4_golden_*.npz
