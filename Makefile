@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -std=c11 -O3 -Wall -Wextra
+CFLAGS = -std=c11 -O3 -Wall -Wextra -march=native -fopenmp
 LDFLAGS = -lm
 
 run: gemma4.c
