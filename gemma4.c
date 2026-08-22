@@ -277,20 +277,28 @@ void quantize(int8_t *quantized, float *scales, const float *input, size_t rows,
 void attention_scores(float *scores, const float *query, const float *key_cache, int first_key, int num_keys, int cache_mask, int head_dim) {
     for (int key_index = 0; key_index < num_keys; key_index++) {
         const float *key = key_cache + ((first_key + key_index) & cache_mask) * head_dim;
-        float sum = 0.0f;
-        for (int j = 0; j < head_dim; j++) sum += query[j] * key[j];
-        scores[key_index] = sum;
+        __m256 sum0 = _mm256_setzero_ps(), sum1 = _mm256_setzero_ps();
+        for (int j = 0; j < head_dim; j += 16) {
+            sum0 = _mm256_fmadd_ps(_mm256_loadu_ps(query + j), _mm256_loadu_ps(key + j), sum0);
+            sum1 = _mm256_fmadd_ps(_mm256_loadu_ps(query + j + 8), _mm256_loadu_ps(key + j + 8), sum1);
+        }
+        __m256 sum8 = _mm256_add_ps(sum0, sum1);
+        __m128 sum4 = _mm_add_ps(_mm256_castps256_ps128(sum8), _mm256_extractf128_ps(sum8, 1));
+        sum4 = _mm_add_ps(sum4, _mm_movehl_ps(sum4, sum4));
+        scores[key_index] = _mm_cvtss_f32(_mm_add_ss(sum4, _mm_movehdup_ps(sum4)));
     }
 }
 
 void weighted_value_sum(float *output, const float *probabilities, const float *value_cache, int first_key, int num_keys, int cache_mask, int head_dim) {
-    for (int j = 0; j < head_dim; j++) {
-        float sum = 0.0f;
+    for (int j = 0; j < head_dim; j += 64) {
+        __m256 sum[8] = {0};
         for (int key_index = 0; key_index < num_keys; key_index++) {
             const float *value = value_cache + ((first_key + key_index) & cache_mask) * head_dim + j;
-            sum += probabilities[key_index] * *value;
+            __m256 probability = _mm256_set1_ps(probabilities[key_index]);
+            for (int u = 0; u < 8; u++)
+                sum[u] = _mm256_fmadd_ps(probability, _mm256_loadu_ps(value + u * 8), sum[u]);
         }
-        output[j] = sum;
+        for (int u = 0; u < 8; u++) _mm256_storeu_ps(output + j + u * 8, sum[u]);
     }
 }
 
