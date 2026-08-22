@@ -196,7 +196,7 @@ float half_to_float(uint16_t half) {
     return value;
 }
 
-// Walks one output and one group at a time, accumulating individual products as floats.
+// Accumulates each 64-value int8 group into an int32 before applying its two scales.
 
 static inline float scalar_weight_scale(const Tensor *weight, size_t output, size_t input_group) {
     size_t groups = (size_t)weight->shape[1] / 64;
@@ -215,14 +215,14 @@ void matmul_int8(float *output, const int8_t *input_q, const float *input_scales
         for (size_t out = 0; out < outputs; out++) {
             float sum = 0.0f;
             for (size_t group = 0; group < groups; group++) {
-                float input_scale = input_scales[row * groups + group];
-                float weight_scale = scalar_weight_scale(weight, out, group);
+                int32_t dot = 0;
                 for (size_t k = 0; k < 64; k++) {
                     size_t input_index = group * 64 + k;
-                    float input_value = (float)input_q[row * inputs + input_index] * input_scale;
-                    float weight_value = (float)weights[out * inputs + input_index] * weight_scale;
-                    sum += input_value * weight_value;
+                    dot += (int32_t)input_q[row * inputs + input_index]
+                         * (int32_t)weights[out * inputs + input_index];
                 }
+                sum += (float)dot * input_scales[row * groups + group]
+                     * scalar_weight_scale(weight, out, group);
             }
             output[row * outputs + out] = sum;
         }
