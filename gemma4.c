@@ -416,11 +416,16 @@ void apply_rope(const Tensor *cosines, const Tensor *sines, float *vectors,
 }
 
 void softmax(float *values, int count) {
-    float max = values[0];
-    for (int i = 1; i < count; i++) if (values[i] > max) max = values[i];
-    float sum = 0.0f;
-    for (int i = 0; i < count; i++) sum += values[i] = expf(values[i] - max);
-    for (int i = 0; i < count; i++) values[i] /= sum;
+    float max = values[0], sum = 1.0f;
+    for (int i = 1; i < count; i++) {
+        if (values[i] > max) {
+            sum = sum * expf(max - values[i]) + 1.0f;
+            max = values[i];
+        } else {
+            sum += expf(values[i] - max);
+        }
+    }
+    for (int i = 0; i < count; i++) values[i] = expf(values[i] - max) / sum;
 }
 
 void geglu(float *gate, const float *up, int rows, int width, int up_stride,
@@ -633,30 +638,84 @@ float *logits(Model *model, InferenceState *state, size_t token) {
     return state->hidden;
 }
 
-void prefill(Model *model, InferenceState *state, const int *tokens, int token_count) {
+void prefill(Model *model, InferenceState *state, const int *tokens,
+             int token_count, int dump_logits) {
     for (int position = 0; position < token_count; position += BATCH_SIZE) {
         int chunk = token_count - position < BATCH_SIZE ? token_count - position : BATCH_SIZE;
         forward(model, state, tokens + position, (size_t)chunk, position);
+        if (dump_logits) {
+            for (int i = 0; i < chunk; i++) {
+                fwrite(logits(model, state, (size_t)i), sizeof(float), VOCAB_SIZE, stdout);
+            }
+        }
     }
 }
 
-int greedy(float *scores) {
-    int best = 0;
-    for (int i = 1; i < VOCAB_SIZE; i++) if (scores[i] > scores[best]) best = i;
-    return best;
+unsigned long long rng_state = 42;
+
+float random_uniform(void) {
+    rng_state ^= rng_state >> 12;
+    rng_state ^= rng_state << 25;
+    rng_state ^= rng_state >> 27;
+    return (float)((rng_state * 0x2545F4914F6CDD1DULL) >> 40) / 16777216.0f;
 }
 
-void generate(Model *model, InferenceState *state, const char *prompt, int max_new_tokens) {
-    const char *segments[3] = {"", prompt, ""};
-    int count = tokenize(&model->tokenizer, segments, state->token_ids, MAX_CONTEXT);
-    if (count < 0) {
-        fprintf(stderr, "prompt is too long\n");
+int sample(float *scores, float temperature) {
+    if (temperature <= 0.0f) {
+        int best = 0;
+        for (int i = 1; i < VOCAB_SIZE; i++) if (scores[i] > scores[best]) best = i;
+        return best;
+    }
+
+    struct { float score; int token; } top[64];
+    for (int i = 0; i < 64; i++) top[i].score = -INFINITY;
+    for (int token = 0; token < VOCAB_SIZE; token++) {
+        if (scores[token] <= top[63].score) continue;
+        int i = 63;
+        while (i > 0 && scores[token] > top[i - 1].score) {
+            top[i] = top[i - 1];
+            i--;
+        }
+        top[i].score = scores[token];
+        top[i].token = token;
+    }
+    float sum = 0.0f;
+    float max = top[0].score / temperature;
+    for (int i = 0; i < 64; i++) sum += top[i].score = expf(top[i].score / temperature - max);
+    float mass = 0.0f;
+    int count = 0;
+    while (mass < 0.95f * sum) mass += top[count++].score;
+    float threshold = random_uniform() * mass;
+    for (int i = 0; i < count; i++) {
+        if ((threshold -= top[i].score) <= 0.0f) return top[i].token;
+    }
+    return top[count - 1].token;
+}
+
+void generate(Model *model, InferenceState *state, const char *prompt,
+              int max_new_tokens, float temperature, int dump_logits) {
+    if (max_new_tokens < 0) {
+        fprintf(stderr, "-n must be non-negative\n");
         exit(1);
     }
-    prefill(model, state, state->token_ids, count);
-    for (int position = count; position < count + max_new_tokens && position < MAX_CONTEXT; position++) {
-        size_t row = position == count ? (size_t)(count - 1) % BATCH_SIZE : 0;
-        int token = greedy(logits(model, state, row));
+    const char *segments[3] = {dump_logits ? "" : "<|turn>user\n", prompt,
+                               dump_logits ? "" : "<turn|>\n<|turn>model\n"};
+    int prompt_tokens = tokenize(&model->tokenizer, segments,
+                                 state->token_ids, MAX_CONTEXT);
+    if (prompt_tokens < 0) {
+        fprintf(stderr, "prompt exceeds the %d-token context limit\n", MAX_CONTEXT);
+        exit(1);
+    }
+
+    prefill(model, state, state->token_ids, prompt_tokens, dump_logits);
+    if (dump_logits) return;
+
+    int end = prompt_tokens + max_new_tokens;
+    if (end > MAX_CONTEXT || end < prompt_tokens) end = MAX_CONTEXT;
+    for (int position = prompt_tokens; position < end; position++) {
+        size_t row = position == prompt_tokens
+            ? (size_t)(prompt_tokens - 1) % BATCH_SIZE : 0;
+        int token = sample(logits(model, state, row), temperature);
         if (token == 1 || token == 106) break;
         fputs(token_text(&model->tokenizer, token), stdout);
         fflush(stdout);
@@ -665,13 +724,51 @@ void generate(Model *model, InferenceState *state, const char *prompt, int max_n
     putchar('\n');
 }
 
+double time_seconds(void) {
+    struct timespec time;
+    clock_gettime(CLOCK_MONOTONIC, &time);
+    return (double)time.tv_sec + (double)time.tv_nsec / 1e9;
+}
+
+void benchmark(Model *model, InferenceState *state,
+               int prefill_tokens, int generated_tokens) {
+    if (prefill_tokens > 0) {
+        for (int i = 0; i < prefill_tokens; i++) state->token_ids[i] = 2 + i % 1000;
+        double start = time_seconds();
+        prefill(model, state, state->token_ids, prefill_tokens, 0);
+        printf("pp%d %.2f tok/s\n", prefill_tokens,
+               (double)prefill_tokens / (time_seconds() - start));
+    }
+    if (generated_tokens > 0) {
+        int token = 2;
+        double start = time_seconds();
+        for (int position = 0; position < generated_tokens; position++) {
+            forward(model, state, &token, 1, position);
+            token = sample(logits(model, state, 0), 0.0f);
+        }
+        printf("tg%d %.2f tok/s\n", generated_tokens,
+               (double)generated_tokens / (time_seconds() - start));
+    }
+}
+
 int main(int argc, char **argv) {
     const char *model_path = "gemma4-E2B-int8.bin";
     const char *prompt = "Why is the sky blue?";
-    int max_new_tokens = 32;
+    float temperature = 1.0f;
+    int max_new_tokens = 1024;
+    int benchmark_mode = 0;
+    int dump_logits = 0;
+    int prefill_tokens = 0;
+    int generated_tokens = 256;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-m") && i + 1 < argc) model_path = argv[++i];
+        else if (!strcmp(argv[i], "-t") && i + 1 < argc) temperature = atof(argv[++i]);
         else if (!strcmp(argv[i], "-n") && i + 1 < argc) max_new_tokens = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--bench")) {
+            benchmark_mode = 1;
+            if (i + 1 < argc) prefill_tokens = atoi(argv[++i]);
+            if (i + 1 < argc) generated_tokens = atoi(argv[++i]);
+        } else if (!strcmp(argv[i], "--dump-logits")) dump_logits = 1;
         else prompt = argv[i];
     }
 
@@ -680,7 +777,9 @@ int main(int argc, char **argv) {
     if (!model) return 1;
 
     InferenceState *state = calloc(1, sizeof(*state));
-    generate(model, state, prompt, max_new_tokens);
+    rng_state = (unsigned long long)(time_seconds() * 1e9);
+    if (benchmark_mode) benchmark(model, state, prefill_tokens, generated_tokens);
+    else generate(model, state, prompt, max_new_tokens, temperature, dump_logits);
     free(state);
     munmap(model, file_size);
     return 0;
