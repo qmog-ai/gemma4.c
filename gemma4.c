@@ -18,7 +18,7 @@
 #define VOCAB_SIZE 262144
 #define MAX_CONTEXT 131072
 #define SLIDING_WINDOW 512
-#define BATCH_SIZE 1
+#define BATCH_SIZE 512
 
 // ----------------------------------------------------------------------------
 // Tokenizer
@@ -146,12 +146,12 @@ typedef struct {
 
 typedef struct {
     float residual[BATCH_SIZE * HIDDEN_SIZE];                           // Carries each token's hidden state through all 35 layers.
-    float hidden[VOCAB_SIZE];                                           // Reused for intermediate results and sized for the final vocabulary logits.
+    float hidden[BATCH_SIZE * 8 * HIDDEN_SIZE];                         // Reused for intermediate results and sized for the largest batched MLP output.
     float auxiliary[BATCH_SIZE * 8 * HIDDEN_SIZE];                      // Holds a second intermediate when attention or the MLP needs two results at once.
     int8_t quantized[BATCH_SIZE * 8 * HIDDEN_SIZE];                     // Holds the current linear input after dynamic int8 quantization.
     float activation_scales[BATCH_SIZE * 8 * HIDDEN_SIZE / 64];         // Stores one float scale for every 64 quantized values.
     float per_layer_inputs[BATCH_SIZE * NUM_LAYERS * 256];              // Stores one 256-value conditioning vector for every token and layer.
-    float sliding_cache[3][4][2 * SLIDING_WINDOW * 256];                // Keeps keys and values for the previous 512 positions in twelve sliding caches.
+    float sliding_cache[3][4][2 * (SLIDING_WINDOW + BATCH_SIZE) * 256]; // Keeps the previous window and current batch for twelve sliding KV caches.
     float full_cache[3][2 * MAX_CONTEXT * 512];                         // Holds the complete context for three 512-wide full-attention KV caches.
     int token_ids[MAX_CONTEXT];                                         // Holds the tokenized prompt before prefill.
 } InferenceState;
@@ -163,7 +163,7 @@ typedef struct {
 } Model;
 
 // Verifies that the compiler laid out the memory-mapped model exactly as the exporter expects.
-_Static_assert(sizeof(int) == 4 && sizeof(float) == 4 && sizeof(void *) == 8 && sizeof(VocabEntry) == 100 && offsetof(VocabEntry, id) == 96 && sizeof(LookupEntry) == 16 && sizeof(Tokenizer) == 33429932 && sizeof(Tensor) == 32 && sizeof(ModelWeights) == 21472 && sizeof(Model) == 33451408 && offsetof(Model, weights) == 33429936 && BATCH_SIZE == 1 && !(SLIDING_WINDOW & (SLIDING_WINDOW - 1)) && !(MAX_CONTEXT & (MAX_CONTEXT - 1)), "MOR ABI mismatch");
+_Static_assert(sizeof(int) == 4 && sizeof(float) == 4 && sizeof(void *) == 8 && sizeof(VocabEntry) == 100 && offsetof(VocabEntry, id) == 96 && sizeof(LookupEntry) == 16 && sizeof(Tokenizer) == 33429932 && sizeof(Tensor) == 32 && sizeof(ModelWeights) == 21472 && sizeof(Model) == 33451408 && offsetof(Model, weights) == 33429936 && BATCH_SIZE == SLIDING_WINDOW && !((SLIDING_WINDOW + BATCH_SIZE) & (SLIDING_WINDOW + BATCH_SIZE - 1)) && !(MAX_CONTEXT & (MAX_CONTEXT - 1)), "MOR ABI mismatch");
 
 // ----------------------------------------------------------------------------
 // Kernels
@@ -401,7 +401,7 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
                int start_pos, size_t token_count, float *scores) {
     const LayerWeights *weights = &layers[layer];
     int full_attention = layer % 5 == 4; // Every fifth layer uses full attention.
-    int cache_len = full_attention ? MAX_CONTEXT : SLIDING_WINDOW;
+    int cache_len = full_attention ? MAX_CONTEXT : SLIDING_WINDOW + BATCH_SIZE;
     int cache_mask = cache_len - 1; // Both cache lengths are powers of two, so masking wraps positions without division.
     int head_dim = weights->q_norm.shape[0];
     int query_width = weights->q_proj.shape[0];
@@ -520,8 +520,10 @@ int greedy(const float *scores) {
 }
 
 void prefill(Model *model, InferenceState *state, const int *tokens, int token_count) {
-    for (int position = 0; position < token_count; position++)
-        forward(model, state, tokens + position, 1, position);
+    for (int position = 0; position < token_count; position += BATCH_SIZE) {
+        int chunk = token_count - position < BATCH_SIZE ? token_count - position : BATCH_SIZE;
+        forward(model, state, tokens + position, chunk, position);
+    }
 }
 
 void generate(Model *model, InferenceState *state, const char *prompt) {
@@ -536,7 +538,7 @@ void generate(Model *model, InferenceState *state, const char *prompt) {
     prefill(model, state, state->token_ids, prompt_tokens);
     int end = prompt_tokens + 256 < MAX_CONTEXT ? prompt_tokens + 256 : MAX_CONTEXT;
     for (int position = prompt_tokens; position < end; position++) {
-        int next_token = greedy(logits(model, state, 0));
+        int next_token = greedy(logits(model, state, position == prompt_tokens ? (prompt_tokens - 1) % BATCH_SIZE : 0));
         if (next_token == 1 || next_token == 106) break;
 
         fputs(token_text(tokenizer, next_token), stdout);
