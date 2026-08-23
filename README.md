@@ -10,9 +10,9 @@ Measured on a Ryzen 7 7700 using eight threads. The benchmark uses 512 fixed
 prompt tokens followed by 16 decode steps. Results are the median of three
 runs after one warmup, excluding model loading and tokenization.
 
-Correctness was compared with the finished packed runtime over 2,388 tokens
-and the full vocabulary using `KL(packed || tiled)`.
+Correctness was compared with the unquantized Hugging Face checkpoint over
+2,388 tokens and the full vocabulary using `KL(HF || runtime)`.
 
 | Mean KL | Max KL | Top-1 agreement | Prefill | Decode |
 | ---: | ---: | ---: | ---: | ---: |
-| 0.002939 | 0.246141 | 97.15% | 114.92 tok/s | 23.98 tok/s |
+| 0.005207 | 1.199355 | 96.5% | 625.61 tok/s | 25.22 tok/s |
