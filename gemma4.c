@@ -205,27 +205,36 @@ static inline int32_t horizontal_sum_i32x8(__m256i values) {
     return _mm_cvtsi128_si32(sum);
 }
 
-// Computes one signed int8 dot product. Lanes follow the input dimension;
-// only one output row is active at a time.
+// Reuses one weight row while computing a small tile of prompt rows.
 #if defined(__AVX512VNNI__)
-static inline int32_t dot64_row(const int8_t *input, const int8_t *weights) {
-    __m512i dot = _mm512_setzero_si512();
+#define ROW_TILE 8
+static inline void dot64_rows(const int8_t *input, size_t input_stride,
+                              const int8_t *weights, size_t rows, int32_t dots[ROW_TILE]) {
+    __m512i dot[ROW_TILE] = {0};
     for (int k = 0; k < 64; k += 32) {
-        __m512i input16 = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(input + k)));
         __m512i weight16 = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
-        dot = _mm512_dpwssd_epi32(dot, input16, weight16);
+        for (size_t row = 0; row < rows; row++) {
+            __m512i input16 = _mm512_cvtepi8_epi16(
+                _mm256_loadu_si256((const __m256i *)(input + row * input_stride + k)));
+            dot[row] = _mm512_dpwssd_epi32(dot[row], input16, weight16);
+        }
     }
-    return _mm512_reduce_add_epi32(dot);
+    for (size_t row = 0; row < rows; row++) dots[row] = _mm512_reduce_add_epi32(dot[row]);
 }
 #else
-static inline int32_t dot64_row(const int8_t *input, const int8_t *weights) {
-    __m256i dot = _mm256_setzero_si256();
+#define ROW_TILE 4
+static inline void dot64_rows(const int8_t *input, size_t input_stride,
+                              const int8_t *weights, size_t rows, int32_t dots[ROW_TILE]) {
+    __m256i dot[ROW_TILE] = {0};
     for (int k = 0; k < 64; k += 16) {
-        __m256i input16 = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(input + k)));
         __m256i weight16 = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
-        dot = _mm256_add_epi32(dot, _mm256_madd_epi16(input16, weight16));
+        for (size_t row = 0; row < rows; row++) {
+            __m256i input16 = _mm256_cvtepi8_epi16(
+                _mm_loadu_si128((const __m128i *)(input + row * input_stride + k)));
+            dot[row] = _mm256_add_epi32(dot[row], _mm256_madd_epi16(input16, weight16));
+        }
     }
-    return horizontal_sum_i32x8(dot);
+    for (size_t row = 0; row < rows; row++) dots[row] = horizontal_sum_i32x8(dot[row]);
 }
 #endif
 
@@ -240,18 +249,27 @@ void matmul_int8(float *output, const int8_t *input_q, const float *input_scales
     size_t inputs = (size_t)weight->shape[1];
     size_t groups = inputs / 64;
     const int8_t *weights = (const int8_t *)weight->data;
-    #pragma omp for collapse(2) schedule(static)
-    for (size_t row = 0; row < rows; row++) {
-        for (size_t out = 0; out < outputs; out++) {
-            float sum = 0.0f;
+    #pragma omp for schedule(static)
+    for (size_t output_block = 0; output_block < outputs; output_block += 16) {
+        for (size_t row_start = 0; row_start < rows; row_start += ROW_TILE) {
+            size_t active_rows = rows - row_start < ROW_TILE ? rows - row_start : ROW_TILE;
+            float sums[ROW_TILE][16] = {0};
             for (size_t group = 0; group < groups; group++) {
-                const int8_t *input_group = input_q + row * inputs + group * 64;
-                const int8_t *weight_group = weights + out * inputs + group * 64;
-                int32_t dot = dot64_row(input_group, weight_group);
-                sum += (float)dot * input_scales[row * groups + group]
-                     * scalar_weight_scale(weight, out, group);
+                const int8_t *input_group = input_q + row_start * inputs + group * 64;
+                for (size_t lane = 0; lane < 16; lane++) {
+                    int32_t dots[ROW_TILE];
+                    size_t out = output_block + lane;
+                    dot64_rows(input_group, inputs, weights + out * inputs + group * 64,
+                               active_rows, dots);
+                    float weight_scale = scalar_weight_scale(weight, out, group);
+                    for (size_t row = 0; row < active_rows; row++)
+                        sums[row][lane] += (float)dots[row]
+                            * input_scales[(row_start + row) * groups + group] * weight_scale;
+                }
             }
-            output[row * outputs + out] = sum;
+            for (size_t row = 0; row < active_rows; row++)
+                for (size_t lane = 0; lane < 16; lane++)
+                    output[(row_start + row) * outputs + output_block + lane] = sums[row][lane];
         }
     }
 }
