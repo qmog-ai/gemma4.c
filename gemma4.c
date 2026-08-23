@@ -251,6 +251,51 @@ void quantize(int8_t *output, float *scales, const float *input, size_t rows, in
     }
 }
 
+#if defined(__AVX512VNNI__)
+static inline __attribute__((always_inline)) void matmul_block(
+    float *output, const int8_t *input, const float *input_scales,
+    const Tensor *weight, size_t rows, size_t output_block) {
+    const size_t block_rows = 16;
+    size_t groups = (size_t)weight->shape[1] / 64;
+    const int8_t *packed_weights = (const int8_t *)weight->data
+        + output_block * block_rows * weight->shape[1];
+    for (size_t row_start = 0; row_start < rows; row_start += 8) {
+        size_t active_rows = rows - row_start < 8 ? rows - row_start : 8;
+        __m512 result[8] = {0};
+        for (size_t group = 0; group < groups; group++) {
+            __m512i dot[8] = {0};
+            __m512i correction = _mm512_setzero_si512();
+            __m512i offset_bytes = _mm512_set1_epi8(-128);
+            for (int chunk = 0; chunk < 16; chunk++) {
+                __m512i weight_values = _mm512_load_si512((const __m512i *)(
+                    packed_weights + group * 1024 + chunk * 64));
+                correction = _mm512_dpbusd_epi32(correction, offset_bytes, weight_values);
+                for (size_t row = 0; row < active_rows; row++) {
+                    __m512i input_values = _mm512_broadcastd_epi32(_mm_loadu_si32(
+                        input + (row_start + row) * weight->shape[1]
+                        + group * 64 + chunk * 4));
+                    input_values = _mm512_xor_si512(input_values, offset_bytes);
+                    dot[row] = _mm512_dpbusd_epi32(dot[row], input_values, weight_values);
+                }
+            }
+            __m512 weight_scales = _mm512_cvtph_ps(_mm256_loadu_si256(
+                (const __m256i *)(weight->scales
+                    + (output_block * groups + group) * block_rows)));
+            for (size_t row = 0; row < active_rows; row++) {
+                result[row] = _mm512_fmadd_ps(
+                    _mm512_cvtepi32_ps(_mm512_sub_epi32(dot[row], correction)),
+                    _mm512_mul_ps(weight_scales,
+                        _mm512_set1_ps(input_scales[(row_start + row) * groups + group])),
+                    result[row]);
+            }
+        }
+        for (size_t row = 0; row < active_rows; row++) {
+            _mm512_storeu_ps(output + (row_start + row) * weight->shape[0]
+                + output_block * block_rows, result[row]);
+        }
+    }
+}
+#else
 static inline __attribute__((always_inline)) void matmul_block(
     float *output, const int8_t *input, const float *input_scales,
     const Tensor *weight, size_t rows, size_t output_block) {
@@ -295,6 +340,7 @@ static inline __attribute__((always_inline)) void matmul_block(
         }
     }
 }
+#endif
 
 void matmul_int8(float *output, const int8_t *input, const float *input_scales,
                  const Tensor *weight, size_t rows) {
