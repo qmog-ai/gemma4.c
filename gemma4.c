@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <cpuid.h>
 #include <omp.h>
 #include <immintrin.h>
 
@@ -163,117 +164,93 @@ typedef struct {
 } Model;
 
 // Verifies that the compiler laid out the memory-mapped model exactly as the exporter expects.
-_Static_assert(sizeof(int) == 4 && sizeof(float) == 4 && sizeof(void *) == 8 && sizeof(VocabEntry) == 100 && offsetof(VocabEntry, id) == 96 && sizeof(LookupEntry) == 16 && sizeof(Tokenizer) == 33429932 && sizeof(Tensor) == 32 && sizeof(ModelWeights) == 21472 && sizeof(Model) == 33451408 && offsetof(Model, weights) == 33429936 && BATCH_SIZE == SLIDING_WINDOW && !((SLIDING_WINDOW + BATCH_SIZE) & (SLIDING_WINDOW + BATCH_SIZE - 1)) && !(MAX_CONTEXT & (MAX_CONTEXT - 1)), "MOR ABI mismatch");
+_Static_assert(sizeof(int) == 4 && sizeof(float) == 4 && sizeof(void *) == 8 && sizeof(VocabEntry) == 100 && offsetof(VocabEntry, id) == 96 && sizeof(LookupEntry) == 16 && sizeof(Tokenizer) == 33429932 && sizeof(Tensor) == 32 && sizeof(ModelWeights) == 21472 && sizeof(Model) == 33451408 && offsetof(Model, weights) == 33429936 && BATCH_SIZE == SLIDING_WINDOW && !((SLIDING_WINDOW + BATCH_SIZE) & (SLIDING_WINDOW + BATCH_SIZE - 1)) && !(MAX_CONTEXT & (MAX_CONTEXT - 1)), "MOG ABI mismatch");
 
 // ----------------------------------------------------------------------------
 // Kernels
 
-// Converts the model's IEEE 754 half-precision scales without CPU intrinsics.
-float half_to_float(uint16_t half) {
-    uint32_t sign = (uint32_t)(half & 0x8000) << 16;
-    uint32_t exponent = (half >> 10) & 0x1f;
-    uint32_t fraction = half & 0x03ff;
-    uint32_t bits;
-
-    if (exponent == 0) {
-        if (fraction == 0) {
-            bits = sign;
-        } else {
-            exponent = 113;
-            while (!(fraction & 0x0400)) {
-                fraction <<= 1;
-                exponent--;
-            }
-            bits = sign | (exponent << 23) | ((fraction & 0x03ff) << 13);
-        }
-    } else if (exponent == 31) {
-        bits = sign | 0x7f800000 | (fraction << 13);
-    } else {
-        bits = sign | ((exponent + 112) << 23) | (fraction << 13);
-    }
-
-    float value;
-    memcpy(&value, &bits, sizeof(value));
-    return value;
+// Uses one OpenMP thread per physical core because each core already uses SIMD, unless OMP_NUM_THREADS overrides it.
+static inline int thread_count(void) {
+    unsigned int eax, ebx, ecx, edx;
+    __cpuid_count(0xB, 0, eax, ebx, ecx, edx);
+    int logical_cpus = omp_get_num_procs();
+    int threads_per_core = ebx & 0xffff;
+    return getenv("OMP_NUM_THREADS") ? omp_get_max_threads() : logical_cpus / (threads_per_core ? threads_per_core : 1);
 }
 
-// Horizontally reduces eight int32 lanes.
-static inline int32_t horizontal_sum_i32x8(__m256i values) {
-    __m128i sum = _mm_add_epi32(_mm256_castsi256_si128(values), _mm256_extracti128_si256(values, 1));
-    sum = _mm_hadd_epi32(sum, sum);
-    sum = _mm_hadd_epi32(sum, sum);
-    return _mm_cvtsi128_si32(sum);
-}
-
-// Reuses one weight row while computing a small tile of prompt rows.
+// Multiplies dynamically quantized activations by packed int8 weights in blocks of 16
+// output rows. VNNI handles eight input rows at once while AVX2 handles four.
 #if defined(__AVX512VNNI__)
-#define ROW_TILE 8
-static inline void dot64_rows(const int8_t *input, size_t input_stride,
-                              const int8_t *weights, size_t rows, int32_t dots[ROW_TILE]) {
-    __m512i dot[ROW_TILE] = {0};
-    for (int k = 0; k < 64; k += 32) {
-        __m512i weight16 = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
-        for (size_t row = 0; row < rows; row++) {
-            __m512i input16 = _mm512_cvtepi8_epi16(
-                _mm256_loadu_si256((const __m256i *)(input + row * input_stride + k)));
-            dot[row] = _mm512_dpwssd_epi32(dot[row], input16, weight16);
+static inline __attribute__((always_inline)) void matmul_block(
+    float *output, const int8_t *input_q, const float *input_scales,
+    const Tensor *weight, size_t rows, size_t output_block) {
+    const size_t block_rows = 16;
+    size_t groups_per_row = (size_t)weight->shape[1] / 64;
+    const int8_t *packed_weights = (const int8_t *)weight->data + output_block * block_rows * weight->shape[1];
+    for (size_t row_start = 0; row_start < rows; row_start += 8) {
+        size_t active_rows = rows - row_start < 8 ? rows - row_start : 8;
+        __m512 result[8] = {0};
+        for (size_t group = 0; group < groups_per_row; group++) {
+            __m512i dot[8] = {0};
+            __m512i correction = _mm512_setzero_si512();
+            __m512i offset_bytes = _mm512_set1_epi8(-128); // Flip signed activations into the unsigned range required by VNNI.
+            for (int chunk = 0; chunk < 16; chunk++) {
+                __m512i weight_values = _mm512_load_si512((const __m512i *)(packed_weights + group * 1024 + chunk * 64));
+                correction = _mm512_dpbusd_epi32(correction, offset_bytes, weight_values);
+                for (size_t row = 0; row < active_rows; row++) {
+                    __m512i input_values = _mm512_broadcastd_epi32(
+                        _mm_loadu_si32(input_q + (row_start + row) * weight->shape[1] + group * 64 + chunk * 4));
+                    input_values = _mm512_xor_si512(input_values, offset_bytes);
+                    dot[row] = _mm512_dpbusd_epi32(dot[row], input_values, weight_values);
+                }
+            }
+            __m512 weight_scales = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(weight->scales + (output_block * groups_per_row + group) * block_rows)));
+            for (size_t row = 0; row < active_rows; row++)
+                result[row] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(_mm512_sub_epi32(dot[row], correction)), _mm512_mul_ps(weight_scales, _mm512_set1_ps(input_scales[(row_start + row) * groups_per_row + group])), result[row]);
         }
+        for (size_t row = 0; row < active_rows; row++)
+            _mm512_storeu_ps(output + (row_start + row) * weight->shape[0] + output_block * block_rows, result[row]);
     }
-    for (size_t row = 0; row < rows; row++) dots[row] = _mm512_reduce_add_epi32(dot[row]);
 }
 #else
-#define ROW_TILE 4
-static inline void dot64_rows(const int8_t *input, size_t input_stride,
-                              const int8_t *weights, size_t rows, int32_t dots[ROW_TILE]) {
-    __m256i dot[ROW_TILE] = {0};
-    for (int k = 0; k < 64; k += 16) {
-        __m256i weight16 = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
-        for (size_t row = 0; row < rows; row++) {
-            __m256i input16 = _mm256_cvtepi8_epi16(
-                _mm_loadu_si128((const __m128i *)(input + row * input_stride + k)));
-            dot[row] = _mm256_add_epi32(dot[row], _mm256_madd_epi16(input16, weight16));
+static inline __attribute__((always_inline)) void matmul_block(
+    float *output, const int8_t *input_q, const float *input_scales,
+    const Tensor *weight, size_t rows, size_t output_block) {
+    const size_t block_rows = 16;
+    size_t groups_per_row = (size_t)weight->shape[1] / 64;
+    const int8_t *packed_weights = (const int8_t *)weight->data + output_block * block_rows * weight->shape[1];
+    for (size_t row_start = 0; row_start < rows; row_start += 4) {
+        size_t active_rows = rows - row_start < 4 ? rows - row_start : 4;
+        for (int half = 0; half < 2; half++) {
+            __m256 result[4] = {0};
+            for (size_t group = 0; group < groups_per_row; group++) {
+                __m256i dot[4] = {0};
+                for (int chunk = 0; chunk < 16; chunk++) {
+                    __m256i weight_values = _mm256_loadu_si256((const __m256i *)(packed_weights + group * 1024 + chunk * 64 + half * 32));
+                    __m256i weight_magnitudes = _mm256_abs_epi8(weight_values);
+                    for (size_t row = 0; row < active_rows; row++) {
+                        __m256i input_values = _mm256_broadcastd_epi32(
+                            _mm_loadu_si32(input_q + (row_start + row) * weight->shape[1] + group * 64 + chunk * 4));
+                        dot[row] = _mm256_add_epi32(dot[row], _mm256_madd_epi16(_mm256_maddubs_epi16(weight_magnitudes, _mm256_sign_epi8(input_values, weight_values)), _mm256_set1_epi16(1)));
+                    }
+                }
+                __m256 weight_scales = _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(weight->scales + (output_block * groups_per_row + group) * block_rows + half * 8)));
+                for (size_t row = 0; row < active_rows; row++)
+                    result[row] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(dot[row]), _mm256_mul_ps(weight_scales, _mm256_set1_ps(input_scales[(row_start + row) * groups_per_row + group])), result[row]);
+            }
+            for (size_t row = 0; row < active_rows; row++)
+                _mm256_storeu_ps(output + (row_start + row) * weight->shape[0] + output_block * block_rows + half * 8, result[row]);
         }
     }
-    for (size_t row = 0; row < rows; row++) dots[row] = horizontal_sum_i32x8(dot[row]);
 }
 #endif
 
-static inline float scalar_weight_scale(const Tensor *weight, size_t output, size_t input_group) {
-    size_t groups = (size_t)weight->shape[1] / 64;
-    return half_to_float(weight->scales[output * groups + input_group]);
-}
-
-void matmul_int8(float *output, const int8_t *input_q, const float *input_scales,
-                 const Tensor *weight, size_t rows) {
-    size_t outputs = (size_t)weight->shape[0];
-    size_t inputs = (size_t)weight->shape[1];
-    size_t groups = inputs / 64;
-    const int8_t *weights = (const int8_t *)weight->data;
+void matmul_int8(float *output, const int8_t *input_q, const float *input_scales, const Tensor *weight, size_t rows) {
+    const size_t block_rows = 16;
     #pragma omp for schedule(static)
-    for (size_t output_block = 0; output_block < outputs; output_block += 16) {
-        for (size_t row_start = 0; row_start < rows; row_start += ROW_TILE) {
-            size_t active_rows = rows - row_start < ROW_TILE ? rows - row_start : ROW_TILE;
-            float sums[ROW_TILE][16] = {0};
-            for (size_t group = 0; group < groups; group++) {
-                const int8_t *input_group = input_q + row_start * inputs + group * 64;
-                for (size_t lane = 0; lane < 16; lane++) {
-                    int32_t dots[ROW_TILE];
-                    size_t out = output_block + lane;
-                    dot64_rows(input_group, inputs, weights + out * inputs + group * 64,
-                               active_rows, dots);
-                    float weight_scale = scalar_weight_scale(weight, out, group);
-                    for (size_t row = 0; row < active_rows; row++)
-                        sums[row][lane] += (float)dots[row]
-                            * input_scales[(row_start + row) * groups + group] * weight_scale;
-                }
-            }
-            for (size_t row = 0; row < active_rows; row++)
-                for (size_t lane = 0; lane < 16; lane++)
-                    output[(row_start + row) * outputs + output_block + lane] = sums[row][lane];
-        }
-    }
+    for (size_t output_block = 0; output_block < (size_t)weight->shape[0] / block_rows; output_block++)
+        matmul_block(output, input_q, input_scales, weight, rows, output_block);
 }
-
 
 // Converts each input row to int8 in groups of 64 values with a float scale recording each group's magnitude.
 void quantize(int8_t *quantized, float *scales, const float *input, size_t rows, size_t width) {
@@ -347,19 +324,26 @@ void geglu(float *gate, const float *up, int rows, int width, int up_stride, con
 // ----------------------------------------------------------------------------
 // Transformer
 
-// Looks up row-major int8 embedding rows and dequantizes them directly.
+// Looks up packed int8 embedding rows and dequantizes them directly without materializing the full embedding table.
 void embedding(float *output, const Tensor *table, const int *tokens, size_t token_count, float multiplier) {
+    const int block_rows = 16;
     int width = table->shape[1];
     int groups = width / 64;
     #pragma omp for schedule(static)
     for (size_t token = 0; token < token_count; token++) {
+        size_t block = (size_t)(tokens[token] / block_rows);
+        int row = tokens[token] % block_rows;
         float *vector = output + token * width;
-        const int8_t *row = (const int8_t *)table->data + (size_t)tokens[token] * width;
-        const uint16_t *scales = table->scales + (size_t)tokens[token] * groups;
+        const int8_t *block_data = (const int8_t *)table->data + block * block_rows * width;
+        const uint16_t *block_scales = table->scales + block * groups * block_rows;
         for (size_t group_index = 0; group_index < (size_t)groups; group_index++) {
-            float scale = half_to_float(scales[group_index]) * multiplier;
-            for (int j = 0; j < 64; j++)
-                vector[group_index * 64 + j] = (float)row[group_index * 64 + j] * scale;
+            const int8_t *group = block_data + group_index * block_rows * 64;
+            float scale = _cvtsh_ss(block_scales[group_index * block_rows + row]) * multiplier;
+            for (int j = 0; j < 64; j++) {
+                int chunk = j / 4;
+                int offset = j % 4;
+                vector[group_index * 64 + j] = (float)group[chunk * block_rows * 4 + row * 4 + offset] * scale;
+            }
         }
     }
 }
@@ -469,7 +453,7 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
 
 void forward(Model *model, InferenceState *state, const int *tokens, size_t token_count, int start_pos) {
     int per_layer_width = model->weights.per_layer_projection_norm.shape[0];
-    #pragma omp parallel
+    #pragma omp parallel num_threads(thread_count())
     {
     float scores[(size_t)start_pos + token_count];
     embedding(state->residual, &model->weights.embed, tokens, token_count, sqrtf((float)HIDDEN_SIZE));
@@ -516,7 +500,7 @@ void forward(Model *model, InferenceState *state, const int *tokens, size_t toke
 
 // Reuses the embedding matrix to turn the final token representation into vocabulary logits, then applies Gemma's tanh soft cap.
 float *logits(Model *model, InferenceState *state, size_t token) {
-    #pragma omp parallel
+    #pragma omp parallel num_threads(thread_count())
     {
     rmsnorm(state->hidden, state->residual + token * HIDDEN_SIZE, &model->weights.norm, HIDDEN_SIZE, 1e-6f, 1);
     quantize(state->quantized, state->activation_scales, state->hidden, 1, HIDDEN_SIZE);
@@ -567,7 +551,7 @@ void generate(Model *model, InferenceState *state, const char *prompt) {
 }
 
 int main(int argc, char **argv) {
-    const char *model_path = "gemma4-E2B-row-major-int8.bin";
+    const char *model_path = "gemma4-E2B-int8.bin";
     const char *prompt = "Why is the sky blue?";
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-m") && i + 1 < argc) model_path = argv[++i];
@@ -580,8 +564,8 @@ int main(int argc, char **argv) {
     Model *model = mmap(NULL, (size_t)st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     close(fd);
     if (model == MAP_FAILED) { perror("mmap"); return 1; }
-    if (memcmp(model->magic, "MOR", 4) != 0) {
-        fprintf(stderr, "bad row-major model file\n");
+    if (memcmp(model->magic, "MOG", 4) != 0) {
+        fprintf(stderr, "bad model file\n");
         return 1;
     }
 
