@@ -58,11 +58,23 @@ Python is only needed to export the model or run numerical validation. Once the 
 
 ## Usage
 
-Running the model requires Linux on an x86-64 CPU with AVX2, an OpenMP-capable C compiler, and `make`. 8 GiB of RAM is recommended.
+Running the model requires an x86-64 CPU with AVX2, an OpenMP-capable C compiler, and `make`. 8 GiB of RAM is recommended.
+
+On Linux, build with:
 
 ```bash
 make
+```
 
+On Windows, build with `make win64` using a MinGW-w64 toolchain with OpenMP. This produces a standalone `run.exe`.
+
+```bash
+make win64
+```
+
+The commands below use `./run`; replace it with `./run.exe` on Windows.
+
+```bash
 # Generate text
 ./run -m ./gemma4-E2B-int8.mog -t 1.0 -n 256 "Why is the sky blue?"
 

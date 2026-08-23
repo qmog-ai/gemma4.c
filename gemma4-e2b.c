@@ -1,16 +1,23 @@
+#ifndef _WIN32
 #define _POSIX_C_SOURCE 200809L
+#endif
 
-#include <fcntl.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include "win.h"
+#else
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#endif
 
 #include <cpuid.h>
 #include <omp.h>
@@ -273,7 +280,12 @@ void quantize(int8_t *q, float *qs, const float *x, size_t rows, size_t k) {
 static inline int threads(void) {
     unsigned int eax, ebx, ecx, edx;
     __cpuid_count(0xB, 0, eax, ebx, ecx, edx);
-    int logical = (int)sysconf(_SC_NPROCESSORS_ONLN), smt = ebx & 0xffff;
+#ifdef _WIN32
+    int logical = omp_get_num_procs();
+#else
+    int logical = (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+    int smt = ebx & 0xffff;
     return getenv("OMP_NUM_THREADS") ? omp_get_max_threads() : logical / (smt ? smt : 1);
 }
 
@@ -702,9 +714,20 @@ void generate(Gemma4Model *m, RunState *s, const char *prompt, int max_tokens, f
 // Bench
 
 double now(void) {
+#ifdef _WIN32
+    static double frequency;
+    LARGE_INTEGER ticks;
+    if (!frequency) {
+        QueryPerformanceFrequency(&ticks);
+        frequency = (double)ticks.QuadPart;
+    }
+    QueryPerformanceCounter(&ticks);
+    return (double)ticks.QuadPart / frequency;
+#else
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
+#endif
 }
 
 void bench(Gemma4Model *m, RunState *s, int n_prompt, int n_gen) {
@@ -748,6 +771,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--dump-logits")) dump = 1;
         else prompt = argv[i];
     }
+#ifdef _WIN32
+    if (dump) _setmode(_fileno(stdout), _O_BINARY);
+#endif
     int fd = open(path, O_RDONLY);
     struct stat st;
     if (fd < 0 || fstat(fd, &st)) { perror(path); return 1; }

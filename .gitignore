@@ -1,5 +1,6 @@
 *.mog
 /run
+/run.exe
 /run-*
 .venv
 __pycache__/
