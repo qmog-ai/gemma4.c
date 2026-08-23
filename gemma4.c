@@ -634,8 +634,8 @@ float *logits(Model *model, InferenceState *state, size_t token) {
 }
 
 void prefill(Model *model, InferenceState *state, const int *tokens, int token_count) {
-    for (int position = 0; position < token_count; position++) {
-        int chunk = 1;
+    for (int position = 0; position < token_count; position += BATCH_SIZE) {
+        int chunk = token_count - position < BATCH_SIZE ? token_count - position : BATCH_SIZE;
         forward(model, state, tokens + position, (size_t)chunk, position);
     }
 }
@@ -655,7 +655,7 @@ void generate(Model *model, InferenceState *state, const char *prompt, int max_n
     }
     prefill(model, state, state->token_ids, count);
     for (int position = count; position < count + max_new_tokens && position < MAX_CONTEXT; position++) {
-        size_t row = 0;
+        size_t row = position == count ? (size_t)(count - 1) % BATCH_SIZE : 0;
         int token = greedy(logits(model, state, row));
         if (token == 1 || token == 106) break;
         fputs(token_text(&model->tokenizer, token), stdout);
