@@ -601,17 +601,42 @@ double time_seconds(void) {
     return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
 }
 
+void benchmark(Model *model, InferenceState *state, int prefill_tokens, int generated_tokens) {
+    if (prefill_tokens > 0) {
+        for (int i = 0; i < prefill_tokens; i++)
+            state->token_ids[i] = 2 + i % 1000;
+        double start = time_seconds();
+        prefill(model, state, state->token_ids, prefill_tokens, 0);
+        (void)logits(model, state, (prefill_tokens - 1) % BATCH_SIZE);
+        printf("pp%d %.2f tok/s\n", prefill_tokens, (double)prefill_tokens / (time_seconds() - start));
+    }
+    if (generated_tokens > 0) {
+        const int token = 2;
+        double start = time_seconds();
+        for (int position = prefill_tokens; position < prefill_tokens + generated_tokens; position++) {
+            forward(model, state, &token, 1, position);
+            (void)logits(model, state, 0);
+        }
+        printf("tg%d@d%d %.2f tok/s\n", generated_tokens, prefill_tokens, (double)generated_tokens / (time_seconds() - start));
+    }
+}
+
 int main(int argc, char **argv) {
     const char *model_path = "gemma4-E2B-int8.bin";
     const char *prompt = "Why is the sky blue?";
     float temperature = 1.0f;
     int max_new_tokens = 1024;
-    int dump_logits = 0;
+    int benchmark_mode = 0, dump_logits = 0, prefill_tokens = 0, generated_tokens = 256;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-m") && i + 1 < argc) model_path = argv[++i];
         else if (!strcmp(argv[i], "-t") && i + 1 < argc) temperature = atof(argv[++i]);
         else if (!strcmp(argv[i], "-n") && i + 1 < argc) max_new_tokens = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--bench")) {
+            benchmark_mode = 1;
+            if (i + 1 < argc) prefill_tokens = atoi(argv[++i]);
+            if (i + 1 < argc) generated_tokens = atoi(argv[++i]);
+        }
         else if (!strcmp(argv[i], "--dump-logits")) dump_logits = 1;
         else prompt = argv[i];
     }
@@ -632,7 +657,8 @@ int main(int argc, char **argv) {
     InferenceState *state = calloc(1, sizeof(*state));
 
     rng_state = (unsigned long long)(time_seconds() * 1e9);
-    generate(model, state, prompt, max_new_tokens, temperature, dump_logits);
+    if (benchmark_mode) benchmark(model, state, prefill_tokens, generated_tokens);
+    else generate(model, state, prompt, max_new_tokens, temperature, dump_logits);
     free(state);
     munmap(model, (size_t)st.st_size);
     return 0;
