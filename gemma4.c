@@ -1,16 +1,23 @@
+#ifndef _WIN32
 #define _POSIX_C_SOURCE 200809L
+#endif
 
-#include <fcntl.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include "win.h"
+#else
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#endif
 
 #include <cpuid.h>
 #include <omp.h>
@@ -725,9 +732,20 @@ void generate(Model *model, InferenceState *state, const char *prompt,
 }
 
 double time_seconds(void) {
+#ifdef _WIN32
+    static double frequency;
+    LARGE_INTEGER ticks;
+    if (!frequency) {
+        QueryPerformanceFrequency(&ticks);
+        frequency = (double)ticks.QuadPart;
+    }
+    QueryPerformanceCounter(&ticks);
+    return (double)ticks.QuadPart / frequency;
+#else
     struct timespec time;
     clock_gettime(CLOCK_MONOTONIC, &time);
     return (double)time.tv_sec + (double)time.tv_nsec / 1e9;
+#endif
 }
 
 void benchmark(Model *model, InferenceState *state,
@@ -771,6 +789,10 @@ int main(int argc, char **argv) {
         } else if (!strcmp(argv[i], "--dump-logits")) dump_logits = 1;
         else prompt = argv[i];
     }
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    if (dump_logits) _setmode(_fileno(stdout), _O_BINARY);
+#endif
 
     size_t file_size;
     Model *model = load_model(model_path, &file_size);
