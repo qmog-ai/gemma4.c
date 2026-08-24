@@ -551,22 +551,25 @@ int sample(float *logits, int vocab_size, float temperature) {
     return top[count - 1].token;
 }
 
-void prefill(Model *model, InferenceState *state, const int *tokens, int token_count) {
+void prefill(Model *model, InferenceState *state, const int *tokens, int token_count, int dump_logits) {
     for (int position = 0; position < token_count; position += BATCH_SIZE) {
         int chunk = token_count - position < BATCH_SIZE ? token_count - position : BATCH_SIZE;
         forward(model, state, tokens + position, chunk, position);
+        if (dump_logits)
+            for (int i = 0; i < chunk; i++)
+                fwrite(logits(model, state, i), sizeof(float), VOCAB_SIZE, stdout);
     }
 }
 
-void generate(Model *model, InferenceState *state, const char *prompt, int max_new_tokens, float temperature) {
+void generate(Model *model, InferenceState *state, const char *prompt, int max_new_tokens, float temperature, int dump_logits) {
     Tokenizer *tokenizer = &model->tokenizer;
-    int styled = isatty(STDOUT_FILENO);
+    int styled = !dump_logits && isatty(STDOUT_FILENO);
 
     if (max_new_tokens < 0) {
         fprintf(stderr, "-n must be non-negative\n");
         exit(1);
     }
-    const char *segments[3] = {"<|turn>user\n", prompt, "<turn|>\n<|turn>model\n"};
+    const char *segments[3] = {dump_logits ? "" : "<|turn>user\n", prompt, dump_logits ? "" : "<turn|>\n<|turn>model\n"};
     int prompt_tokens = tokenize(tokenizer, segments, state->token_ids, MAX_CONTEXT);
     if (prompt_tokens < 0) {
         fprintf(stderr, "prompt exceeds the %d-token context limit\n", MAX_CONTEXT);
@@ -577,7 +580,8 @@ void generate(Model *model, InferenceState *state, const char *prompt, int max_n
         fflush(stdout);
     }
 
-    prefill(model, state, state->token_ids, prompt_tokens);
+    prefill(model, state, state->token_ids, prompt_tokens, dump_logits);
+    if (dump_logits) return;
     int end = prompt_tokens + max_new_tokens;
     if (end > MAX_CONTEXT || end < prompt_tokens) end = MAX_CONTEXT;
     for (int position = prompt_tokens; position < end; position++) {
@@ -602,11 +606,13 @@ int main(int argc, char **argv) {
     const char *prompt = "Why is the sky blue?";
     float temperature = 1.0f;
     int max_new_tokens = 1024;
+    int dump_logits = 0;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-m") && i + 1 < argc) model_path = argv[++i];
         else if (!strcmp(argv[i], "-t") && i + 1 < argc) temperature = atof(argv[++i]);
         else if (!strcmp(argv[i], "-n") && i + 1 < argc) max_new_tokens = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--dump-logits")) dump_logits = 1;
         else prompt = argv[i];
     }
 
@@ -626,7 +632,7 @@ int main(int argc, char **argv) {
     InferenceState *state = calloc(1, sizeof(*state));
 
     rng_state = (unsigned long long)(time_seconds() * 1e9);
-    generate(model, state, prompt, max_new_tokens, temperature);
+    generate(model, state, prompt, max_new_tokens, temperature, dump_logits);
     free(state);
     munmap(model, (size_t)st.st_size);
     return 0;
