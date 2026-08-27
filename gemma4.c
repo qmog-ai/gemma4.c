@@ -644,6 +644,9 @@ void benchmark(Model *model, InferenceState *state, int prefill_tokens, int gene
 }
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+    argv_utf8(&argc, &argv);
+#endif
     const char *model_path = "gemma4-E2B-int8.bin";
     const char *prompt = "Why is the sky blue?";
     float temperature = 1.0f;
@@ -695,6 +698,3 @@ int main(int argc, char **argv) {
 //|                            |
 //|          gemma4.c          |
 //|____________________________|
-//             ||
-//         ____||____
-//        |__________|

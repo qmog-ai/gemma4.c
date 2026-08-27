@@ -25,11 +25,13 @@ Setup
 
      python3 -m pip install numpy torch transformers safetensors
 
-3. Place the unquantized checkpoint in the repository root or at
+3. Build the C executable (`make` or `make win64`; see README). Pass --run
+   if it is not ./run or ./run.exe.
+
+4. Place the unquantized checkpoint in the repository root or at
    ../models/gemma-4-E2B-it-qat-q4_0-unquantized. Otherwise, Transformers
    downloads google/gemma-4-E2B-it-qat-q4_0-unquantized from Hugging Face.
-   The 2,388-token BF16 run peaks at roughly 10 GiB of RAM. The C executable is
-   built automatically with make when it is missing or out of date.
+   The 2,388-token BF16 run peaks at roughly 10 GiB of RAM.
 
 Reproduce the README result
 ---------------------------
@@ -49,6 +51,7 @@ import argparse
 import importlib.util
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -61,6 +64,7 @@ LOCAL_MODELS = (
 )
 DEFAULT_TOKENS = 2388
 MAX_TOKENS = 2388
+DEFAULT_RUN = ROOT / ("run.exe" if sys.platform == "win32" else "run")
 
 VALIDATION_TEXT = ROOT / "validation.txt"
 
@@ -107,32 +111,29 @@ def tokenize_prompt(tok, text: str, tokens: int):
 def generate_hf_logits(model_id: str, text: str, tokens: int):
     import torch
 
+    print("loading reference model...", file=sys.stderr)
     tok = load_tokenizer(model_id)
     prompt, ids = tokenize_prompt(tok, text, tokens)
-    print(f"loading {model_id}", file=sys.stderr)
     model = load_model(model_id)
-    print(f"forward in {next(model.parameters()).dtype}, no weight quantization", file=sys.stderr)
     device = next(model.parameters()).device
     x = torch.tensor([ids.tolist()], dtype=torch.long, device=device)
-    print(f"forward {len(ids)} tokens", file=sys.stderr)
+    print("running transformers reference (may take several minutes)", file=sys.stderr)
+    start = time.perf_counter()
     with torch.inference_mode():
         logits = model(input_ids=x).logits[0].float().cpu().numpy().astype(np.float32)
+    print(f"Transformers finished in {time.perf_counter() - start:.1f}s", file=sys.stderr)
     return prompt, ids, logits
 
 
-def ensure_run(run: Path):
-    src = ROOT / "gemma4.c"
-    if run.is_file() and run.stat().st_mtime >= src.stat().st_mtime:
-        return
-    subprocess.check_call(["make", "-C", str(ROOT)])
-
-
 def dump_runtime_logits(run: Path, model: Path, prompt: str) -> np.ndarray:
+    print("Running gemma4.c", file=sys.stderr)
+    start = time.perf_counter()
     proc = subprocess.run(
         [str(run), "-m", str(model), "--dump-logits", prompt],
         stdout=subprocess.PIPE,
         check=True,
     )
+    print(f"gemma4.c finished in {time.perf_counter() - start:.1f}s", file=sys.stderr)
     return np.frombuffer(proc.stdout, dtype=np.float32)
 
 
@@ -198,21 +199,23 @@ def main():
     p.add_argument("tokens", nargs="?", type=int, default=DEFAULT_TOKENS)
     p.add_argument("--checkpoint", default=default_model())
     p.add_argument("--model", type=Path, default=ROOT / "gemma4-E2B-int8.bin")
-    p.add_argument("--run", type=Path, default=ROOT / "run")
+    p.add_argument("--run", type=Path, default=DEFAULT_RUN)
     args = p.parse_args()
 
     if args.tokens < 1 or args.tokens > MAX_TOKENS:
         raise SystemExit(f"tokens must be between 1 and {MAX_TOKENS}")
     if not args.model.is_file():
         raise SystemExit(f"missing model file: {args.model}")
+    if not args.run.is_file():
+        raise SystemExit(f"missing runtime: {args.run}")
 
     prompt, _ids, expected = generate_hf_logits(
         args.checkpoint,
         VALIDATION_TEXT.read_text(encoding="utf-8"),
         args.tokens,
     )
-    ensure_run(args.run)
     actual = dump_runtime_logits(args.run, args.model, prompt)
+    print("Comparing logits...", file=sys.stderr)
     report(actual, expected.astype(np.float32, copy=False))
 
 

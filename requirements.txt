@@ -1,4 +1,7 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 numpy
 safetensors
 torch
+tqdm
 transformers==5.6.2

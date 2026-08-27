@@ -25,5 +25,6 @@
 
 void *mmap(void *addr, size_t length, int protection, int flags, int fd, int64_t offset);
 int munmap(void *address, size_t length);
+void argv_utf8(int *argc, char ***argv);
 
 #endif

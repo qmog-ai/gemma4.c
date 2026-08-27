@@ -7,7 +7,7 @@ run: gemma4.c
 	$(CC) $(CFLAGS) gemma4.c -o run $(LDFLAGS)
 
 win64: gemma4.c win.c win.h
-	$(WINCC) $(CFLAGS) -static -D_WIN32 gemma4.c win.c -o run.exe $(LDFLAGS)
+	$(WINCC) $(CFLAGS) -static -D_WIN32 gemma4.c win.c -o run.exe $(LDFLAGS) -lshell32
 
 .PHONY: clean win64
 clean:

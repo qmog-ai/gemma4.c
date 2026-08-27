@@ -82,7 +82,7 @@ The implementation is validated against the Hugging Face Transformers reference 
 
 An exact match is not expected because gemma4.c uses int8 matrix weights and linear inputs while the reference runs the unquantized checkpoint in BF16. The output distributions nevertheless remain closely aligned.
 
-The complete validation peaks at about 10 GiB of RAM:
+Build the C runtime first (`make` or `make win64`). The complete validation peaks at about 10 GiB of RAM:
 
 ```bash
 python3 validation.py

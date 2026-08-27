@@ -1,6 +1,20 @@
 #include "win.h"
 
 #include <errno.h>
+#include <shellapi.h>
+#include <stdlib.h>
+
+void argv_utf8(int *argc, char ***argv) {
+    LPWSTR *wide = CommandLineToArgvW(GetCommandLineW(), argc);
+    if (!wide) return;
+    char **utf8 = malloc(*argc * sizeof(*utf8));
+    for (int i = 0; i < *argc; i++) {
+        int n = WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, NULL, 0, NULL, NULL);
+        WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, utf8[i] = malloc(n), n, NULL, NULL);
+    }
+    LocalFree(wide);
+    *argv = utf8;
+}
 
 void *mmap(void *addr, size_t length, int protection, int flags, int fd, int64_t offset) {
     (void)addr;

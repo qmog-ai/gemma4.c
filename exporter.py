@@ -11,6 +11,7 @@ import tempfile
 
 import numpy as np
 import safetensors
+from tqdm import tqdm
 
 
 N_LAYERS = 35
@@ -277,7 +278,7 @@ def read_weight(weights, path, rows=None):
     return tensor.float().contiguous().numpy()
 
 
-def write_tensor(output, weights, tensor):
+def write_tensor(output, weights, tensor, progress):
     if tensor["synthetic"] is not None:
         arrays = [np.asarray(tensor["synthetic"], dtype="<f4", order="C")]
     elif len(tensor["shape"]) == 2:
@@ -297,6 +298,7 @@ def write_tensor(output, weights, tensor):
             output.seek(data_at)
             output.write(array.tobytes())
             data_at += array.nbytes
+            progress.update(array.size)
             continue
 
         values, scales = quantize(array)
@@ -312,6 +314,7 @@ def write_tensor(output, weights, tensor):
         output.seek(scales_at)
         output.write(scales.tobytes())
         scales_at += scales.nbytes
+        progress.update(array.size)
 
 
 def export(checkpoint_path, output_path):
@@ -319,6 +322,7 @@ def export(checkpoint_path, output_path):
     checkpoint_path = checkpoint_path.expanduser().resolve()
     output_path = output_path.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    print("Loading checkpoint...")
     model = read_json(checkpoint_path, "config.json")
     tokenizer = compile_tokenizer(read_json(checkpoint_path, "tokenizer.json"))
     text_config = validate_text_config(model)
@@ -343,18 +347,24 @@ def export(checkpoint_path, output_path):
                     record = tensor_record(item) if item else bytes(TENSOR_RECORD.size)
                     output.write(record)
 
-                written = set()
+                seen = set()
+                items = []
                 for item in text:
-                    if item is None or item["data"] in written:
+                    if item is None or item["data"] in seen:
                         continue
-                    written.add(item["data"])
-                    write_tensor(output, weights, item)
+                    seen.add(item["data"])
+                    items.append(item)
+                total = sum(math.prod(item["shape"]) for item in items)
+                with tqdm(total=total, desc="Quantizing weights", unit="weight", unit_scale=True) as progress:
+                    for item in items:
+                        write_tensor(output, weights, item, progress)
+                print("Finalizing model file...")
                 output.flush()
                 os.fsync(output.fileno())
             os.replace(temporary_path, output_path)
 
     text_count = len({item["data"] for item in text if item})
-    print(f"Wrote {output_path} ({file_size / 1024**3:.2f} GiB): {text_count} text tensors")
+    print(f"Done {output_path} ({file_size / 1024**3:.2f} GiB): {text_count} text tensors")
 
 
 def main():
