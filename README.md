@@ -4,7 +4,9 @@ Gemma 4 E2B CPU inference in 700 lines of pure C.
 
 An educational project made to understand how LLM inference works. The full inference path is implemented in one file without external libraries.
 
-<img width="800" height="339" alt="demo" src="https://github.com/user-attachments/assets/2de47c35-ee34-473e-9164-635c82377267" />
+For a detailed walkthrough of the implementation, see the [blog post](https://qmog.ai/blog/gemma4.c).
+
+<img width="800" alt="demo" src="https://github.com/user-attachments/assets/d2b866f9-37d8-424d-a874-2bbd94bf0af6" />
 
 ## Benchmark
 
@@ -38,12 +40,12 @@ The benchmark command takes the prefill length followed by the number of decode 
 
 ## Quick start
 
-You need a CPU with AVX2, an OpenMP-capable C compiler, and `make`. The model takes about 5.0 GB of disk space, and 8 GB of RAM is recommended.
+gemma4.c runs on Linux and Windows. You need a CPU with AVX2, an OpenMP-capable C compiler, and `make`. The model takes about 5.0 GB of disk space, and 8 GB of RAM is recommended.
 
 Clone the repository and download the ready-to-run model:
 
 ```bash
-git clone https://github.com/ryanssenn/gemma4.c
+git clone https://github.com/qmog-ai/gemma4.c
 cd gemma4.c
 python3 -m pip install -U huggingface_hub
 hf download QmogAI/gemma4-e2b-int8 gemma4-E2B-int8.bin --local-dir .
@@ -73,7 +75,7 @@ make win64 WINCC=gcc
 
 ## Model
 
-The C runtime cannot read the original checkpoint directly. `exporter.py` takes the tokenizer and language-model weights from the Hugging Face checkpoint and writes them in the exact layout used by `gemma4.c`.
+gemma4.c runs [google/gemma-4-E2B-it-qat-q4_0-unquantized](https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-unquantized), the unquantized QAT checkpoint Google released for Gemma 4 E2B. The C runtime cannot read that checkpoint directly. `exporter.py` takes its tokenizer and language-model weights and writes them in the exact layout used by `gemma4.c`.
 
 Matrix weights are stored as int8 with FP16 scales. Inputs to linear layers are dynamically quantized to int8 while the rest of the activations remain float32. The resulting file is about 5.0 GB (4.7 GiB).
 
@@ -88,7 +90,7 @@ Python is only needed to export the model or run numerical validation. Once the 
 
 ## Numerical validation
 
-The implementation is validated against the Hugging Face Transformers reference implementation running Google's unquantized [Gemma 4 E2B QAT checkpoint](https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-unquantized) in BF16. Both implementations process the complete Éva Gauthier article from the WikiText-103 validation split under teacher forcing. The passage contains 2,387 text tokens, and the added BOS token brings the comparison to 2,388 model positions.
+The implementation is validated against the Hugging Face Transformers reference implementation running Google's unquantized [Gemma 4 E2B QAT checkpoint](https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-unquantized) in BF16. Both implementations process the complete Éva Gauthier article from the WikiText-103 validation split under teacher forcing, comparing logits at all 2,388 token positions.
 
 | Metric | Result |
 | ------ | -----: |
