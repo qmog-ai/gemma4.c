@@ -18,6 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 #endif
+
 #include <cpuid.h>
 #include <omp.h>
 #include <immintrin.h>
@@ -155,7 +156,7 @@ typedef struct {
 
 typedef struct {
     float residual[BATCH_SIZE * HIDDEN_SIZE];                           // Carries each token's hidden state through all 35 layers.
-    float hidden[BATCH_SIZE * 8 * HIDDEN_SIZE];                         // Reused for intermediate results and sized for the largest batched MLP output.
+    float hidden[BATCH_SIZE * 8 * HIDDEN_SIZE];                         // Reused for intermediate results and sized for the largest 12,288-value MLP output.
     float auxiliary[BATCH_SIZE * 8 * HIDDEN_SIZE];                      // Holds a second intermediate when attention or the MLP needs two results at once.
     int8_t quantized[BATCH_SIZE * 8 * HIDDEN_SIZE];                     // Holds the current linear input after dynamic int8 quantization.
     float activation_scales[BATCH_SIZE * 8 * HIDDEN_SIZE / 64];         // Stores one float scale for every 64 quantized values.
@@ -402,7 +403,7 @@ void softmax(float *values, int count) {
         if (values[i] > max) { sum = sum * expf(max - values[i]) + 1.0f; max = values[i]; } // Rescale the sum when a new maximum appears so expf() stays in range.
         else sum += expf(values[i] - max);
     }
-
+    
     for (int i = 0; i < count; i++) values[i] = expf(values[i] - max) / sum;
 }
 
@@ -461,9 +462,10 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
 
 void forward(Model *model, InferenceState *state, const int *tokens, size_t token_count, int start_pos) {
     int per_layer_width = model->weights.per_layer_projection_norm.shape[0];
+    // One OpenMP team stays alive for the full forward pass while each kernel divides its own loop.
     #pragma omp parallel num_threads(thread_count())
     {
-    float scores[(size_t)start_pos + token_count];
+    float scores[(size_t)start_pos + token_count]; // Each thread needs private scratch large enough for every visible key.
     embedding(state->residual, &model->weights.embed, tokens, token_count, sqrtf((float)HIDDEN_SIZE));
 
     // Build the token-conditioned input that each transformer layer will receive.
@@ -472,7 +474,7 @@ void forward(Model *model, InferenceState *state, const int *tokens, size_t toke
     rmsnorm(state->per_layer_inputs, state->per_layer_inputs, &model->weights.per_layer_projection_norm, per_layer_width, 1e-6f * HIDDEN_SIZE, token_count * NUM_LAYERS);
 
     embedding(state->hidden, &model->weights.embed_per_layer, tokens, token_count, sqrtf((float)per_layer_width));
-    add_and_scale(state->per_layer_inputs, state->hidden, token_count * NUM_LAYERS * per_layer_width, 1.0f / sqrtf(2.0f));
+    add_and_scale(state->per_layer_inputs, state->hidden, token_count * NUM_LAYERS * per_layer_width, 1.0f / sqrtf(2.0f)); 
 
     for (int layer = 0; layer < NUM_LAYERS; layer++) {
         LayerWeights *weights = &model->weights.layers[layer];
@@ -510,11 +512,11 @@ void forward(Model *model, InferenceState *state, const int *tokens, size_t toke
 float *logits(Model *model, InferenceState *state, size_t token) {
     #pragma omp parallel num_threads(thread_count())
     {
-    rmsnorm(state->hidden, state->residual + token * HIDDEN_SIZE, &model->weights.norm, HIDDEN_SIZE, 1e-6f, 1);
-    quantize(state->quantized, state->activation_scales, state->hidden, 1, HIDDEN_SIZE);
-    matmul_int8(state->hidden, state->quantized, state->activation_scales, &model->weights.embed, 1);
-    #pragma omp for schedule(static)
-    for (int i = 0; i < VOCAB_SIZE; i++) state->hidden[i] = 30.0f * tanhf(state->hidden[i] / 30.0f);
+        rmsnorm(state->hidden, state->residual + token * HIDDEN_SIZE, &model->weights.norm, HIDDEN_SIZE, 1e-6f, 1);
+        quantize(state->quantized, state->activation_scales, state->hidden, 1, HIDDEN_SIZE);
+        matmul_int8(state->hidden, state->quantized, state->activation_scales, &model->weights.embed, 1);
+        #pragma omp for schedule(static)
+        for (int i = 0; i < VOCAB_SIZE; i++) state->hidden[i] = 30.0f * tanhf(state->hidden[i] / 30.0f);
     }
     return state->hidden;
 }
@@ -562,9 +564,11 @@ void prefill(Model *model, InferenceState *state, const int *tokens, int token_c
     for (int position = 0; position < token_count; position += BATCH_SIZE) {
         int chunk = token_count - position < BATCH_SIZE ? token_count - position : BATCH_SIZE;
         forward(model, state, tokens + position, chunk, position);
-        if (dump_logits)
-            for (int i = 0; i < chunk; i++)
+        if (dump_logits) {
+            for (int i = 0; i < chunk; i++) {
                 fwrite(logits(model, state, i), sizeof(float), VOCAB_SIZE, stdout);
+            }
+        }
     }
 }
 
@@ -576,7 +580,7 @@ void generate(Model *model, InferenceState *state, const char *prompt, int max_n
         fprintf(stderr, "-n must be non-negative\n");
         exit(1);
     }
-    const char *segments[3] = {dump_logits ? "" : "<|turn>user\n", prompt, dump_logits ? "" : "<turn|>\n<|turn>model\n"};
+    const char *segments[3] = {dump_logits ? "" : "<|turn>user\n", prompt,dump_logits ? "" : "<turn|>\n<|turn>model\n"};
     int prompt_tokens = tokenize(tokenizer, segments, state->token_ids, MAX_CONTEXT);
     if (prompt_tokens < 0) {
         fprintf(stderr, "prompt exceeds the %d-token context limit\n", MAX_CONTEXT);
@@ -589,11 +593,12 @@ void generate(Model *model, InferenceState *state, const char *prompt, int max_n
 
     prefill(model, state, state->token_ids, prompt_tokens, dump_logits);
     if (dump_logits) return;
+
     int end = prompt_tokens + max_new_tokens;
     if (end > MAX_CONTEXT || end < prompt_tokens) end = MAX_CONTEXT;
     for (int position = prompt_tokens; position < end; position++) {
         int next_token = sample(logits(model, state, position == prompt_tokens ? (prompt_tokens - 1) % BATCH_SIZE : 0), VOCAB_SIZE, temperature);
-        if (next_token == 1 || next_token == 106) break;
+        if (next_token == 1 || next_token == 106) break; // Stop at <eos> or <turn|>.
 
         fputs(token_text(tokenizer, next_token), stdout);
         fflush(stdout);
