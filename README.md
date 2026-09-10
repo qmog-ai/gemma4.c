@@ -1,18 +1,125 @@
 # gemma4.c
 
-Gemma 4 inference in a single C file.
+Gemma 4 E2B CPU inference in 700 lines of pure C.
 
-`exporter.py` converts a Hugging Face checkpoint into the binary model format loaded by the runtime.
+An educational project made to understand how LLM inference works. The full inference path is implemented in one file without external libraries.
+
+For a detailed walkthrough of the implementation, see the [blog post](https://qmog.ai/blog/gemma4.c).
+
+## Quick start
+
+gemma4.c runs on Linux and Windows. You need a CPU with AVX2 and an OpenMP-capable C compiler. The model takes about 5.0 GB of disk space, and 8 GB of RAM is recommended.
+
+Clone the repository and download the ready-to-run model:
+
+```bash
+git clone https://github.com/qmog-ai/gemma4.c
+cd gemma4.c
+python3 -m pip install -U huggingface_hub
+hf download QmogAI/gemma4-e2b-int8 gemma4-E2B-int8.bin --local-dir .
+```
+
+On Linux:
+
+```bash
+make
+./run -t 0 -n 256 "Why is the sky blue?"
+```
+
+On Windows, use a MinGW-w64 environment that provides `gcc`, OpenMP, and `make`:
+
+```powershell
+make win64 WINCC=gcc
+.\run.exe -t 0 -n 256 "Why is the sky blue?"
+```
+
+## Options
+
+- `-m` sets the model path. The default is `gemma4-E2B-int8.bin`.
+- `-t` sets the temperature. The default is `1.0`. Use `0` for greedy decoding.
+- `-n` sets the maximum number of tokens to generate. The default is `1,024`.
+- `--bench` measures prefill and decode throughput.
+- `--dump-logits` writes prompt logits as float32 binary data.
+
+## Model
+
+gemma4.c runs [google/gemma-4-E2B-it-qat-q4_0-unquantized](https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-unquantized), the unquantized QAT checkpoint Google released for Gemma 4 E2B. The C runtime cannot read that checkpoint directly. `exporter.py` takes its tokenizer and language-model weights and writes them in the exact layout used by `gemma4.c`.
+
+Matrix weights are stored as int8 with FP16 scales. Inputs to linear layers are dynamically quantized to int8 while the rest of the activations remain float32. The resulting file is about 5.0 GB (4.7 GiB).
+
+To create it yourself instead:
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 exporter.py /path/to/gemma-4-E2B-it-qat-q4_0-unquantized -o ./gemma4-E2B-int8.bin
+```
+
+Python is only needed to export the model or run numerical validation. Once the `.bin` file exists, inference runs entirely through the C program.
 
 ## Benchmark
 
-Measured on a Ryzen 7 7700 using eight threads. The benchmark uses 512 fixed
-prompt tokens followed by 16 decode steps. Results are the median of three
-runs after one warmup, excluding model loading and tokenization.
+Measured on an AMD Ryzen 7 7700 using the default native build.
 
-Correctness was compared with the unquantized Hugging Face checkpoint over
-2,388 tokens and the full vocabulary using `KL(HF || runtime)`.
+### Prefill (tok/s)
 
-| Mean KL | Max KL | Top-1 agreement | Prefill | Decode |
-| ---: | ---: | ---: | ---: | ---: |
-| 0.005207 | 1.199355 | 96.5% | 625.61 tok/s | 25.22 tok/s |
+| Prompt tokens | gemma4.c (int8) | llama.cpp (Q8_0) |
+| ------------: | --------------: | ----------------: |
+| 512 | 630.73 | 272.69 |
+| 2,048 | 494.14 | 258.56 |
+| 8,192 | 254.02 | 223.99 |
+| 16,384 | 106.36 | 188.60 |
+
+### Decode (tok/s)
+
+| Starting context | gemma4.c (int8) | llama.cpp (Q8_0) |
+| ---------------: | --------------: | ----------------: |
+| 512 | 25.16 | 22.67 |
+| 2,048 | 24.04 | 21.28 |
+| 8,192 | 20.35 | 17.82 |
+| 16,384 | 16.80 | 14.26 |
+
+Prefill measures the time to process the stated number of prompt tokens. Decode first fills the KV cache to the stated depth, then measures 128 single-token steps. Both include the logits needed to produce the next token, but exclude sampling and terminal output. Results are the mean of three timed runs after one discarded warmup. Both implementations use FP32 KV caches, 512-token batches, eight CPU threads, and native builds.
+
+The benchmark command takes the prefill length followed by the number of decode steps:
+
+```bash
+./run -m ./gemma4-E2B-int8.bin --bench 512 128
+```
+
+## Numerical validation
+
+The implementation is validated against the Hugging Face Transformers reference implementation running Google's unquantized [Gemma 4 E2B QAT checkpoint](https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-unquantized) in BF16. Both implementations process the complete Éva Gauthier article from the WikiText-103 validation split under teacher forcing, comparing logits at all 2,388 token positions.
+
+| Metric | Result |
+| ------ | -----: |
+| Top-1 agreement | 2,305 / 2,388 (96.5%) |
+| Mean KL divergence | 0.005207 |
+
+An exact match is not expected because gemma4.c uses int8 matrix weights and linear inputs while the reference runs the unquantized checkpoint in BF16. The output distributions nevertheless remain closely aligned.
+
+Build the C runtime first (`make` or `make win64`). The complete validation peaks at about 10 GiB of RAM:
+
+```bash
+python3 validation.py
+```
+
+Pass a smaller token count for a quicker check:
+
+```bash
+python3 validation.py 64
+```
+
+`validation.py` uses the runtime's `--dump-logits` flag to collect float32 logits after each prompt position. The flag can also be used directly when comparing gemma4.c with another implementation:
+
+```bash
+./run -m ./gemma4-E2B-int8.bin --dump-logits "Why is the sky blue?" > logits.bin
+```
+
+## Repository contents
+
+- `gemma4.c` contains the tokenizer, model definitions, kernels, transformer, KV cache, and generation loop.
+- `exporter.py` converts the original checkpoint into the binary layout read by the C runtime.
+- `validation.py` compares the runtime's logits with Hugging Face Transformers.
+- `validation.txt` contains the WikiText-103 passage used for numerical validation.
+- `win.c` and `win.h` provide the small Windows memory-mapping compatibility layer.
+- `Makefile` builds the Linux or Windows executable.
