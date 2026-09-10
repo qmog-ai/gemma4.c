@@ -6,38 +6,6 @@ An educational project made to understand how LLM inference works. The full infe
 
 For a detailed walkthrough of the implementation, see the [blog post](https://qmog.ai/blog/gemma4.c).
 
-<img width="800" alt="demo" src="https://github.com/user-attachments/assets/d2b866f9-37d8-424d-a874-2bbd94bf0af6" />
-
-## Benchmark
-
-Measured on an AMD Ryzen 7 7700 using the default native build.
-
-### Prefill (tok/s)
-
-| Prompt tokens | gemma4.c (int8) | llama.cpp (Q8_0) |
-| ------------: | --------------: | ----------------: |
-| 512 | 630.73 | 272.69 |
-| 2,048 | 494.14 | 258.56 |
-| 8,192 | 254.02 | 223.99 |
-| 16,384 | 106.36 | 188.60 |
-
-### Decode (tok/s)
-
-| Starting context | gemma4.c (int8) | llama.cpp (Q8_0) |
-| ---------------: | --------------: | ----------------: |
-| 512 | 25.16 | 22.67 |
-| 2,048 | 24.04 | 21.28 |
-| 8,192 | 20.35 | 17.82 |
-| 16,384 | 16.80 | 14.26 |
-
-Prefill measures the time to process the stated number of prompt tokens. Decode first fills the KV cache to the stated depth, then measures 128 single-token steps. Both include the logits needed to produce the next token, but exclude sampling and terminal output. Results are the mean of three timed runs after one discarded warmup. Both implementations use FP32 KV caches, 512-token batches, eight CPU threads, and native builds.
-
-The benchmark command takes the prefill length followed by the number of decode steps:
-
-```bash
-./run -m ./gemma4-E2B-int8.bin --bench 512 128
-```
-
 ## Quick start
 
 gemma4.c runs on Linux and Windows. You need a CPU with AVX2, an OpenMP-capable C compiler, and `make`. The model takes about 5.0 GB of disk space, and 8 GB of RAM is recommended.
@@ -87,6 +55,36 @@ python3 exporter.py /path/to/gemma-4-E2B-it-qat-q4_0-unquantized -o ./gemma4-E2B
 ```
 
 Python is only needed to export the model or run numerical validation. Once the `.bin` file exists, inference runs entirely through the C program.
+
+## Benchmark
+
+Measured on an AMD Ryzen 7 7700 using the default native build.
+
+### Prefill (tok/s)
+
+| Prompt tokens | gemma4.c (int8) | llama.cpp (Q8_0) |
+| ------------: | --------------: | ----------------: |
+| 512 | 630.73 | 272.69 |
+| 2,048 | 494.14 | 258.56 |
+| 8,192 | 254.02 | 223.99 |
+| 16,384 | 106.36 | 188.60 |
+
+### Decode (tok/s)
+
+| Starting context | gemma4.c (int8) | llama.cpp (Q8_0) |
+| ---------------: | --------------: | ----------------: |
+| 512 | 25.16 | 22.67 |
+| 2,048 | 24.04 | 21.28 |
+| 8,192 | 20.35 | 17.82 |
+| 16,384 | 16.80 | 14.26 |
+
+Prefill measures the time to process the stated number of prompt tokens. Decode first fills the KV cache to the stated depth, then measures 128 single-token steps. Both include the logits needed to produce the next token, but exclude sampling and terminal output. Results are the mean of three timed runs after one discarded warmup. Both implementations use FP32 KV caches, 512-token batches, eight CPU threads, and native builds.
+
+The benchmark command takes the prefill length followed by the number of decode steps:
+
+```bash
+./run -m ./gemma4-E2B-int8.bin --bench 512 128
+```
 
 ## Numerical validation
 

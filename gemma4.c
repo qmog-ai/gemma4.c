@@ -77,7 +77,6 @@ int apply_bpe_merges(const Tokenizer *tokenizer, int *tokens, int count) {
 // Converts the three prompt segments from UTF-8 into vocabulary pieces, falls back to byte tokens when needed, applies BPE, and prepends <bos>.
 int tokenize(const Tokenizer *tokenizer, const char *segments[3], int *tokens, int capacity) {
     int count = 1;
-
     for (int segment = 0; segment < 3; segment++)
         for (const char *cursor = segments[segment]; *cursor;) {
             if (count >= capacity) return -1;
@@ -104,7 +103,6 @@ int tokenize(const Tokenizer *tokenizer, const char *segments[3], int *tokens, i
                 tokens[count++] = 238 + *byte; // Byte tokens occupy IDs 238 through 493.
             }
         }
-
     count = 1 + apply_bpe_merges(tokenizer, tokens + 1, count - 1);
     tokens[0] = 2; // Token 2 is <bos>.
     return count;
@@ -190,8 +188,7 @@ static inline int thread_count(void) {
 }
 
 // Multiplies dynamically quantized activations by packed int8 weights in blocks of 16
-// output rows. VNNI handles eight input rows at once while AVX2 handles four. Both
-// accumulate integer dot products before restoring float values with their scales.
+// output rows. VNNI handles eight input rows at once while AVX2 handles four.
 #if defined(__AVX512VNNI__)
 static inline __attribute__((always_inline)) void matmul_block(
     float *output, const int8_t *input_q, const float *input_scales,
@@ -257,8 +254,7 @@ static inline __attribute__((always_inline)) void matmul_block(
 }
 #endif
 
-void matmul_int8(float *output, const int8_t *input_q, const float *input_scales,
-                 const Tensor *weight, size_t rows) {
+void matmul_int8(float *output, const int8_t *input_q, const float *input_scales, const Tensor *weight, size_t rows) {
     const size_t block_rows = 16;
     #pragma omp for schedule(static)
     for (size_t output_block = 0; output_block < (size_t)weight->shape[0] / block_rows; output_block++)
@@ -282,8 +278,7 @@ void quantize(int8_t *quantized, float *scales, const float *input, size_t rows,
     }
 }
 
-void attention_scores(float *scores, const float *query, const float *key_cache,
-        int first_key, int num_keys, int cache_mask, int head_dim) {
+void attention_scores(float *scores, const float *query, const float *key_cache, int first_key, int num_keys, int cache_mask, int head_dim) {
     for (int key_index = 0; key_index < num_keys; key_index++) {
         const float *key = key_cache + ((first_key + key_index) & cache_mask) * head_dim;
         __m256 sum0 = _mm256_setzero_ps(), sum1 = _mm256_setzero_ps();
@@ -298,8 +293,7 @@ void attention_scores(float *scores, const float *query, const float *key_cache,
     }
 }
 
-void weighted_value_sum(float *output, const float *probabilities, const float *value_cache,
-        int first_key, int num_keys, int cache_mask, int head_dim) {
+void weighted_value_sum(float *output, const float *probabilities, const float *value_cache, int first_key, int num_keys, int cache_mask, int head_dim) {
     for (int j = 0; j < head_dim; j += 64) {
         __m256 sum[8] = {0};
         for (int key_index = 0; key_index < num_keys; key_index++) {
@@ -409,6 +403,7 @@ void softmax(float *values, int count) {
         if (values[i] > max) { sum = sum * expf(max - values[i]) + 1.0f; max = values[i]; } // Rescale the sum when a new maximum appears so expf() stays in range.
         else sum += expf(values[i] - max);
     }
+    
     for (int i = 0; i < count; i++) values[i] = expf(values[i] - max) / sum;
 }
 
@@ -426,21 +421,27 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
     float *key_cache = full_attention ? state->full_cache[cache_owner / 5] : state->sliding_cache[cache_owner / 5][cache_owner % 5];
     float *value_cache = key_cache + (size_t)cache_len * head_dim;
 
+    // Build the queries for every token in the batch.
     quantize(state->quantized, state->activation_scales, state->hidden, token_count, weights->q_proj.shape[1]);
     matmul_int8(state->auxiliary, state->quantized, state->activation_scales, &weights->q_proj, token_count);
     rmsnorm(state->auxiliary, state->auxiliary, &weights->q_norm, head_dim, 1e-6f, token_count * (query_width / head_dim));
     apply_rope(&weights->rope_cos, &weights->rope_sin, state->auxiliary, query_width / head_dim, head_dim, start_pos, token_count);
 
+    // Compute keys and values and write them to the cache. Only the first 15 layers
+    // have these weights, every other layer reads a cache an earlier layer filled.
     if (weights->k_proj.data) {
         float *new_keys = key_cache + ((size_t)start_pos & cache_mask) * head_dim;
         float *new_values = value_cache + ((size_t)start_pos & cache_mask) * head_dim;
         matmul_int8(new_keys, state->quantized, state->activation_scales, &weights->k_proj, token_count);
         matmul_int8(new_values, state->quantized, state->activation_scales, &weights->v_proj, token_count);
         rmsnorm(new_keys, new_keys, &weights->k_norm, head_dim, 1e-6f, token_count);
-        rmsnorm(new_values, new_values, NULL, head_dim, 1e-6f, token_count); // Value vectors are normalized without a learned weight.
+        // Value vectors are normalized without a learned weight.
+        rmsnorm(new_values, new_values, NULL, head_dim, 1e-6f, token_count);
         apply_rope(&weights->rope_cos, &weights->rope_sin, new_keys, 1, head_dim, start_pos, token_count);
     }
 
+    // Each head scores its query against the visible keys and averages their values.
+    // Sliding-window layers see the last 512 keys, full-attention layers see everything.
     #pragma omp for collapse(2) schedule(dynamic, 1)
     for (size_t head = 0; head < (size_t)(query_width / head_dim); head++) {
         for (size_t token = 0; token < token_count; token++) {
@@ -454,6 +455,7 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
         }
     }
 
+    // Merge the heads back to the residual width.
     quantize(state->quantized, state->activation_scales, state->hidden, token_count, weights->o_proj.shape[1]);
     matmul_int8(state->hidden, state->quantized, state->activation_scales, &weights->o_proj, token_count);
 }
@@ -472,17 +474,18 @@ void forward(Model *model, InferenceState *state, const int *tokens, size_t toke
     rmsnorm(state->per_layer_inputs, state->per_layer_inputs, &model->weights.per_layer_projection_norm, per_layer_width, 1e-6f * HIDDEN_SIZE, token_count * NUM_LAYERS);
 
     embedding(state->hidden, &model->weights.embed_per_layer, tokens, token_count, sqrtf((float)per_layer_width));
-    add_and_scale(state->per_layer_inputs, state->hidden, token_count * NUM_LAYERS * per_layer_width,
-               1.0f / sqrtf(2.0f)); // Keeps the variance of the combined inputs unchanged.
+    add_and_scale(state->per_layer_inputs, state->hidden, token_count * NUM_LAYERS * per_layer_width, 1.0f / sqrtf(2.0f)); 
 
     for (int layer = 0; layer < NUM_LAYERS; layer++) {
         LayerWeights *weights = &model->weights.layers[layer];
 
+        // Attention, normalized and added back onto the residual stream.
         rmsnorm(state->hidden, state->residual, &weights->input_layernorm, HIDDEN_SIZE, 1e-6f, token_count);
         attention(state, model->weights.layers, layer, start_pos, token_count, scores);
         rmsnorm(state->hidden, state->hidden, &weights->post_attn_layernorm, HIDDEN_SIZE, 1e-6f, token_count);
         add_and_scale(state->residual, state->hidden, token_count * HIDDEN_SIZE, 1.0f);
 
+        // Feed-forward network, down(gelu(gate) * up), quantizing activations to int8 before each matmul.
         rmsnorm(state->hidden, state->residual, &weights->pre_ffn_layernorm, HIDDEN_SIZE, 1e-6f, token_count);
         quantize(state->quantized, state->activation_scales, state->hidden, token_count, weights->gate_proj.shape[1]);
         matmul_int8(state->hidden, state->quantized, state->activation_scales, &weights->gate_proj, token_count);
@@ -492,15 +495,15 @@ void forward(Model *model, InferenceState *state, const int *tokens, size_t toke
         matmul_int8(state->hidden, state->quantized, state->activation_scales, &weights->down_proj, token_count);
         rmsnorm(state->hidden, state->hidden, &weights->post_ffn_layernorm, HIDDEN_SIZE, 1e-6f, token_count);
         add_and_scale(state->residual, state->hidden, token_count * HIDDEN_SIZE, 1.0f);
-        // Gate and project this layer's conditioning input before adding it to the residual stream with a learned scale.
+
+        // This layer's per-layer embedding row, gated and added with a learned scale.
         quantize(state->quantized, state->activation_scales, state->residual, token_count, HIDDEN_SIZE);
         matmul_int8(state->hidden, state->quantized, state->activation_scales, &weights->per_layer_input_gate, token_count);
         geglu(state->hidden, state->per_layer_inputs + layer * per_layer_width, token_count, per_layer_width, NUM_LAYERS * per_layer_width, &model->weights.gelu_table);
         quantize(state->quantized, state->activation_scales, state->hidden, token_count, weights->per_layer_projection.shape[1]);
         matmul_int8(state->hidden, state->quantized, state->activation_scales, &weights->per_layer_projection, token_count);
         rmsnorm(state->hidden, state->hidden, &weights->post_per_layer_input_norm, HIDDEN_SIZE, 1e-6f, token_count);
-        add_and_scale(state->residual, state->hidden, token_count * HIDDEN_SIZE,
-                   ((float *)weights->layer_scalar.data)[0]);
+        add_and_scale(state->residual, state->hidden, token_count * HIDDEN_SIZE, ((float *)weights->layer_scalar.data)[0]);
     }
     }
 }
@@ -569,8 +572,7 @@ void prefill(Model *model, InferenceState *state, const int *tokens, int token_c
     }
 }
 
-void generate(Model *model, InferenceState *state, const char *prompt,
-              int max_new_tokens, float temperature, int dump_logits) {
+void generate(Model *model, InferenceState *state, const char *prompt, int max_new_tokens, float temperature, int dump_logits) {
     Tokenizer *tokenizer = &model->tokenizer;
     int styled = !dump_logits && isatty(STDOUT_FILENO);
 
@@ -578,14 +580,12 @@ void generate(Model *model, InferenceState *state, const char *prompt,
         fprintf(stderr, "-n must be non-negative\n");
         exit(1);
     }
-    const char *segments[3] = {dump_logits ? "" : "<|turn>user\n", prompt,
-                               dump_logits ? "" : "<turn|>\n<|turn>model\n"};
+    const char *segments[3] = {dump_logits ? "" : "<|turn>user\n", prompt,dump_logits ? "" : "<turn|>\n<|turn>model\n"};
     int prompt_tokens = tokenize(tokenizer, segments, state->token_ids, MAX_CONTEXT);
     if (prompt_tokens < 0) {
         fprintf(stderr, "prompt exceeds the %d-token context limit\n", MAX_CONTEXT);
         exit(1);
     }
-
     if (styled) {
         fputs("\n\033[2;36m────────────────────────────────\033[0m\n", stdout);
         fflush(stdout);
