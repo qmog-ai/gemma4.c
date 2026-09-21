@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export Gemma 4 E2B with row-major int8 matrices for CPU stages 0 and 1."""
+"""Export Gemma 4 E2B with int8 matrices and FP32 scales."""
 
 import argparse
 import json
@@ -29,7 +29,7 @@ TOKENIZER_SPAN = 33_429_932
 TENSOR_RECORD = struct.Struct("<QQ4i")
 LOOKUP_RECORD = struct.Struct("<8sii")
 TEXT_TENSOR_SPAN = 55_008
-HEADER_SIZE = 4  # MOG\0
+HEADER_SIZE = 4  # MOF\0
 GELU_TABLE_N = 4096
 GELU_TABLE_LO = -8.0
 GELU_TABLE_HI = 8.0
@@ -64,7 +64,7 @@ def tensor(weights, path, synthetic=None):
     cursor = align64(cursor + count * (1 if quantized else 4))
     if quantized:
         result["scales"] = cursor
-        cursor = align64(cursor + count // GROUP_SIZE * 2)
+        cursor = align64(cursor + count // GROUP_SIZE * 4)
     return result
 
 
@@ -264,10 +264,9 @@ def tensor_record(tensor):
 
 def quantize(array):
     groups = array.reshape(-1, GROUP_SIZE)
-    # Round the scale to its fp16 storage precision first, then quantize against the rounded value so the runtime dequantizes with the exact scale used here. Floor at the smallest normal fp16.
-    scales = np.maximum(np.abs(groups).max(axis=1) / 127.0, 6.104e-05).astype("<f2")
-    wide = scales.astype("<f4")
-    values = np.rint(groups / wide[:, None]).clip(-127, 127).astype(np.int8)
+    scales = (np.abs(groups).max(axis=1) / 127.0).astype("<f4")
+    inverse = np.divide(1.0, scales, out=np.zeros_like(scales), where=scales != 0)
+    values = np.rint(groups * inverse[:, None]).clip(-127, 127).astype(np.int8)
     return values, scales
 
 
@@ -332,7 +331,7 @@ def export(checkpoint_path, output_path):
             with tempfile.NamedTemporaryFile(dir=directory, delete=False) as output:
                 temporary_path = Path(output.name)
                 output.truncate(file_size)
-                output.write(b"MOR\0")
+                output.write(b"MOF\0")
                 output.write(tokenizer)
                 for item in text:
                     record = tensor_record(item) if item else bytes(TENSOR_RECORD.size)
