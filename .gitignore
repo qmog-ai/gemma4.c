@@ -1,5 +1,7 @@
 /gemma4-E2B-int8.bin
 /run
 /run.exe
+/benchmark
+/perf.data*
 /.venv
 /__pycache__/
