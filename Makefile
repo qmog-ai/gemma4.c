@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -std=c11 -O3 -Wall -Wextra -march=native
+CFLAGS = -std=c11 -O3 -Wall -Wextra -march=native -fopenmp
 LDFLAGS = -lm
 
 all: run benchmark
