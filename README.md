@@ -30,15 +30,15 @@ make
 ## Numerical validation
 
 ```sh
-python3 validation.py 512
+python3 validation.py
 ```
 
 | Metric | Result |
 | --- | ---: |
-| Mean KL divergence | 0.004557 |
-| Top-1 agreement | 95.5% (489/512) |
-| Mean absolute error | 0.155311 |
-| Mean cosine similarity | 0.998817 |
+| Mean KL divergence | 0.004676 |
+| Top-1 agreement | 96.4% (2302/2388) |
+| Mean absolute error | 0.157333 |
+| Mean cosine similarity | 0.998926 |
 
 ## Performance
 
@@ -56,21 +56,21 @@ perf report
 ```
 
 Benchmarked on an eight-core Ryzen 7 7700 using one OpenMP thread per physical core.
-Each result is the median of three runs after one discarded warmup.
+Each throughput result is the median of three runs after one discarded warmup.
 perf cycle shares are from one run.
 
 ### Decode
 
 | Starting context | Decode (tg128) | dot_i8() | matmul_int8() | dot_f32() | weighted_sum() |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 128 | 24.48&nbsp;tok&#8288;/&#8288;s | 78.99% | 11.87% | 1.84% | 0.33% |
-| 512 | 23.09&nbsp;tok&#8288;/&#8288;s | 76.34% | 11.33% | 4.66% | 0.93% |
-| 1,024 | 22.47&nbsp;tok&#8288;/&#8288;s | 74.11% | 10.91% | 6.75% | 1.38% |
+| 128 | 24.50&nbsp;tok&#8288;/&#8288;s | 77.73% | 12.35% | 2.55% | 0.46% |
+| 512 | 23.11&nbsp;tok&#8288;/&#8288;s | 70.30% | 12.71% | 9.08% | 1.54% |
+| 1,024 | 22.45&nbsp;tok&#8288;/&#8288;s | 64.47% | 12.40% | 14.68% | 2.27% |
 
 ### Prefill
 
 | Prompt length | Prefill | dot_i8() | matmul_int8() | dot_f32() | weighted_sum() |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 128 | 30.23&nbsp;tok&#8288;/&#8288;s | 79.21% | 11.64% | 1.15% | 0.23% |
-| 512 | 29.12&nbsp;tok&#8288;/&#8288;s | 76.89% | 11.37% | 4.02% | 0.76% |
-| 1,024 | 28.13&nbsp;tok&#8288;/&#8288;s | 74.35% | 10.92% | 6.47% | 1.33% |
+| 128 | 89.05&nbsp;tok&#8288;/&#8288;s | 73.36% | 15.52% | 3.14% | 0.43% |
+| 512 | 81.74&nbsp;tok&#8288;/&#8288;s | 67.15% | 14.26% | 11.25% | 1.64% |
+| 1,024 | 75.01&nbsp;tok&#8288;/&#8288;s | 61.14% | 13.01% | 17.15% | 2.52% |
