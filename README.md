@@ -30,22 +30,22 @@ make
 ## Numerical validation
 
 ```sh
-python3 validation.py 64
+python3 validation.py 512
 ```
 
 | Metric | Result |
 | --- | ---: |
-| Mean KL divergence | 0.002274 |
-| Top-1 agreement | 95.3% (61/64) |
-| Mean absolute error | 0.117840 |
-| Mean cosine similarity | 0.999509 |
+| Mean KL divergence | 0.002976 |
+| Top-1 agreement | 96.9% (496/512) |
+| Mean absolute error | 0.120942 |
+| Mean cosine similarity | 0.999323 |
 
 ## Performance
 
 ```sh
 make benchmark
-./benchmark -m MODEL --pp 64,256,512 -r 3
-./benchmark -m MODEL --tg 128 --d 64,256,512 -r 3
+./benchmark -m MODEL --pp 128,512,1024 -r 3
+./benchmark -m MODEL --tg 128 --d 128,512,1024 -r 3
 ```
 
 Profile one workload at a time without function inlining:
@@ -55,21 +55,22 @@ Profile one workload at a time without function inlining:
 perf report --stdio --no-children --percent-limit 0
 ```
 
-Benchmarked on an eight-core Ryzen 7 7700 using one thread. Throughput is the mean and sample
-standard deviation of three runs after one discarded warmup. Profiles contain only the measured workload.
+Benchmarked on an eight-core Ryzen 7 7700 using one OpenMP thread per physical core.
+Each result is the median of three runs after one discarded warmup.
+perf cycle shares are from one run.
 
 ### Decode
 
 | Starting context | Decode (tg128) | dot_i8() | matmul_int8() | dot_f32() | weighted_sum() |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 64 | 7.82 ± 0.03&nbsp;tok&#8288;/&#8288;s | 46.52% | 47.38% | 3.88% | 0.50% |
-| 256 | 7.27 ± 0.00&nbsp;tok&#8288;/&#8288;s | 42.96% | 44.57% | 9.19% | 1.27% |
-| 512 | 6.57 ± 0.00&nbsp;tok&#8288;/&#8288;s | 40.14% | 41.12% | 14.50% | 2.08% |
+| 128 | 24.48&nbsp;tok&#8288;/&#8288;s | 78.99% | 11.87% | 1.84% | 0.33% |
+| 512 | 23.09&nbsp;tok&#8288;/&#8288;s | 76.34% | 11.33% | 4.66% | 0.93% |
+| 1,024 | 22.47&nbsp;tok&#8288;/&#8288;s | 74.11% | 10.91% | 6.75% | 1.38% |
 
 ### Prefill
 
 | Prompt length | Prefill | dot_i8() | matmul_int8() | dot_f32() | weighted_sum() |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 64 | 9.84 ± 0.04&nbsp;tok&#8288;/&#8288;s | 47.92% | 49.33% | 1.30% | 0.18% |
-| 256 | 9.44 ± 0.02&nbsp;tok&#8288;/&#8288;s | 46.01% | 47.15% | 4.86% | 0.60% |
-| 512 | 8.95 ± 0.04&nbsp;tok&#8288;/&#8288;s | 43.53% | 44.86% | 9.08% | 1.17% |
+| 128 | 30.23&nbsp;tok&#8288;/&#8288;s | 79.21% | 11.64% | 1.15% | 0.23% |
+| 512 | 29.12&nbsp;tok&#8288;/&#8288;s | 76.89% | 11.37% | 4.02% | 0.76% |
+| 1,024 | 28.13&nbsp;tok&#8288;/&#8288;s | 74.35% | 10.92% | 6.47% | 1.33% |
