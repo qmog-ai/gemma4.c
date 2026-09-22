@@ -19,7 +19,10 @@
 #define VOCAB_SIZE 262144
 #define MAX_CONTEXT 131072
 #define SLIDING_WINDOW 512
-#define BATCH_SIZE 1
+#define SLIDING_CACHE_SIZE (2 * SLIDING_WINDOW)
+#ifndef BATCH_SIZE
+#define BATCH_SIZE 4
+#endif
 
 // ----------------------------------------------------------------------------
 // Tokenizer
@@ -153,7 +156,7 @@ typedef struct {
     float activation_scales[BATCH_SIZE * 8 * HIDDEN_SIZE / 64];         // Stores one float scale for every 64 quantized values.
     float per_layer_inputs[BATCH_SIZE * NUM_LAYERS * 256];              // Stores one 256-value conditioning vector for every token and layer.
     float logits[VOCAB_SIZE];                                           // Holds the final vocabulary projection used for sampling.
-    float sliding_cache[3][4][2 * SLIDING_WINDOW * 256];                // Keeps keys and values for the previous 512 positions in twelve sliding caches.
+    float sliding_cache[3][4][2 * SLIDING_CACHE_SIZE * 256];           // Keeps the previous window and current batch for twelve sliding KV caches.
     float full_cache[3][2 * MAX_CONTEXT * 512];                         // Holds the complete context for three 512-wide full-attention KV caches.
     int token_ids[MAX_CONTEXT];                                         // Holds the tokenized prompt before prefill.
 } InferenceState;
@@ -165,7 +168,7 @@ typedef struct {
 } Model;
 
 // Verifies that the compiler laid out the memory-mapped model exactly as the exporter expects.
-_Static_assert(sizeof(int) == 4 && sizeof(float) == 4 && sizeof(void *) == 8 && sizeof(VocabEntry) == 100 && offsetof(VocabEntry, id) == 96 && sizeof(LookupEntry) == 16 && sizeof(Tokenizer) == 33429932 && sizeof(Tensor) == 32 && sizeof(ModelWeights) == 21472 && sizeof(Model) == 33451408 && offsetof(Model, weights) == 33429936 && BATCH_SIZE == 1 && !(SLIDING_WINDOW & (SLIDING_WINDOW - 1)) && !(MAX_CONTEXT & (MAX_CONTEXT - 1)), "MOF ABI mismatch");
+_Static_assert(sizeof(int) == 4 && sizeof(float) == 4 && sizeof(void *) == 8 && sizeof(VocabEntry) == 100 && offsetof(VocabEntry, id) == 96 && sizeof(LookupEntry) == 16 && sizeof(Tokenizer) == 33429932 && sizeof(Tensor) == 32 && sizeof(ModelWeights) == 21472 && sizeof(Model) == 33451408 && offsetof(Model, weights) == 33429936 && BATCH_SIZE > 0 && BATCH_SIZE <= SLIDING_WINDOW && !(SLIDING_CACHE_SIZE & (SLIDING_CACHE_SIZE - 1)) && !(MAX_CONTEXT & (MAX_CONTEXT - 1)), "MOF ABI mismatch");
 
 Model *load_model(const char *path, size_t *size) {
     int fd = open(path, O_RDONLY);
@@ -215,13 +218,13 @@ void matmul_int8(float *result, const int8_t *input, const float *input_scales,
     size_t inputs = (size_t)weight->shape[1];
     size_t groups = inputs / 64;
     const int8_t *weights = (const int8_t *)weight->data;
-    #pragma omp for collapse(2) schedule(static)
-    for (size_t token = 0; token < token_count; token++) {
-        const int8_t *input_row = input + token * inputs;
-        const float *scales = input_scales + token * groups;
-        for (size_t weight_row = 0; weight_row < outputs; weight_row++) {
-            const int8_t *row_weights = weights + weight_row * inputs;
-            const float *weight_scales = weight->scales + weight_row * groups;
+    #pragma omp for schedule(static)
+    for (size_t weight_row = 0; weight_row < outputs; weight_row++) {
+        const int8_t *row_weights = weights + weight_row * inputs;
+        const float *weight_scales = weight->scales + weight_row * groups;
+        for (size_t token = 0; token < token_count; token++) {
+            const int8_t *input_row = input + token * inputs;
+            const float *scales = input_scales + token * groups;
             float sum = 0.0f;
             for (size_t group = 0; group < groups; group++) {
                 size_t offset = group * 64;
@@ -358,7 +361,7 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
                int start_pos, size_t token_count, float *scores) {
     const LayerWeights *weights = &layers[layer];
     int is_full_attention = layer % 5 == 4; // Every fifth layer uses full attention.
-    int cache_size = is_full_attention ? MAX_CONTEXT : SLIDING_WINDOW;
+    int cache_size = is_full_attention ? MAX_CONTEXT : SLIDING_CACHE_SIZE;
     int cache_mask = cache_size - 1; // Both cache lengths are powers of two, so masking wraps positions without division.
     int head_dim = weights->q_norm.shape[0];
     int query_width = weights->q_proj.shape[0];
@@ -519,10 +522,12 @@ int sample(const float *scores, float temperature) {
 }
 
 int prefill(Model *model, InferenceState *state, const int *tokens, int token_count, int start_pos, int dump_logits) {
-    for (int position = 0; position < token_count; position++) {
-        forward(model, state, tokens + position, 1, start_pos + position);
+    for (int position = 0; position < token_count; position += BATCH_SIZE) {
+        int batch_size = token_count - position < BATCH_SIZE ? token_count - position : BATCH_SIZE;
+        forward(model, state, tokens + position, batch_size, start_pos + position);
         if (dump_logits)
-            fwrite(logits(model, state, 0), sizeof(float), VOCAB_SIZE, stdout);
+            for (int row = 0; row < batch_size; row++)
+                fwrite(logits(model, state, row), sizeof(float), VOCAB_SIZE, stdout);
     }
     return token_count ? (token_count - 1) % BATCH_SIZE : 0;
 }
@@ -542,12 +547,13 @@ void generate(Model *model, InferenceState *state, const char *prompt,
         exit(1);
     }
 
-    prefill(model, state, state->token_ids, prompt_tokens, 0, dump_logits);
+    int last_prompt_row = prefill(model, state, state->token_ids, prompt_tokens, 0, dump_logits);
     if (dump_logits) return;
     int available = MAX_CONTEXT - prompt_tokens;
     int end = prompt_tokens + (max_new_tokens < available ? max_new_tokens : available);
     for (int position = prompt_tokens; position < end; position++) {
-        int next_token = sample(logits(model, state, 0), temperature);
+        size_t row = position == prompt_tokens ? (size_t)last_prompt_row : 0;
+        int next_token = sample(logits(model, state, row), temperature);
         if (next_token == 1 || next_token == 106) break;
 
         fputs(token_text(tokenizer, next_token), stdout);

@@ -21,15 +21,15 @@ make
 ## Numerical validation
 
 ```sh
-python3 validation.py 512
+python3 validation.py
 ```
 
 | Metric | Result |
 | --- | ---: |
-| Mean KL divergence | 0.004557 |
-| Top-1 agreement | 95.5% (489/512) |
-| Mean absolute error | 0.155311 |
-| Mean cosine similarity | 0.998817 |
+| Mean KL divergence | 0.004676 |
+| Top-1 agreement | 96.4% (2302/2388) |
+| Mean absolute error | 0.157333 |
+| Mean cosine similarity | 0.998926 |
 
 ## Performance
 
@@ -38,21 +38,36 @@ python3 validation.py 512
 ```
 
 Benchmarked on an eight-core Ryzen 7 7700 using one OpenMP thread per physical core.
-Each result is the median of three runs after one discarded warmup.
-`perf` cycle shares are from one run with the three kernels temporarily marked `noinline`; this changed throughput by less than 0.3%.
+Each throughput result is the median of three runs after one discarded warmup.
+`perf` cycle shares are from one run.
 
 ### Decode
 
-| Starting context | Decode (tg128) | `dot_i8` | `dot_f32` | Value sum |
-| ---: | ---: | ---: | ---: | ---: |
-| 0 | 25.00 tok/s | 79.45% | 0.91% | 0.16% |
-| 512 | 23.13 tok/s | 75.90% | 4.65% | 0.93% |
-| 1,024 | 22.47 tok/s | 73.68% | 6.69% | 1.35% |
+| Starting context | Decode (tg128) | Matmul cycles | Attention cycles |
+| ---: | ---: | ---: | ---: |
+| 0 | 25.04 tok/s | 91.87% | 1.35% |
+| 512 | 23.13 tok/s | 84.65% | 8.76% |
+| 1,024 | 22.48 tok/s | 82.17% | 11.46% |
 
 ### Prefill
 
-| Prompt length | Prefill | `dot_i8` | `dot_f32` | Value sum |
-| ---: | ---: | ---: | ---: | ---: |
-| 128 | 30.29 tok/s | 78.65% | 1.15% | 0.19% |
-| 512 | 29.13 tok/s | 76.65% | 3.99% | 0.75% |
-| 1,024 | 28.15 tok/s | 73.99% | 6.45% | 1.30% |
+| Prompt length | Prefill | Matmul cycles | Attention cycles |
+| ---: | ---: | ---: | ---: |
+| 128 | 90.22 tok/s | 93.66% | 3.85% |
+| 512 | 82.20 tok/s | 84.62% | 13.53% |
+| 1,024 | 75.29 tok/s | 77.49% | 20.69% |
+
+For a 512-token prompt, prefill becomes compute-bound around a batch size of four.
+
+| Batch size | Prefill |
+| ---: | ---: |
+| 1 | 29.15 tok/s |
+| 2 | 54.13 tok/s |
+| 4 | 81.90 tok/s |
+| 8 | 83.66 tok/s |
+| 16 | 85.18 tok/s |
+| 32 | 85.70 tok/s |
+| 64 | 86.10 tok/s |
+| 128 | 86.27 tok/s |
+| 256 | 86.14 tok/s |
+| 512 | 85.73 tok/s |
