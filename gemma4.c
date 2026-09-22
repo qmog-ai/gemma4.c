@@ -1,9 +1,11 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include <cpuid.h>
 #include <fcntl.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -197,6 +199,15 @@ static inline float dot_f32(const float *a, const float *b, int n) {
     return sum;
 }
 
+// Uses one OpenMP thread per physical core unless OMP_NUM_THREADS overrides it.
+static inline int thread_count(void) {
+    unsigned int eax, ebx, ecx, edx;
+    __cpuid_count(0xB, 0, eax, ebx, ecx, edx);
+    int logical_cpus = omp_get_num_procs();
+    int threads_per_core = ebx & 0xffff;
+    return getenv("OMP_NUM_THREADS") ? omp_get_max_threads() : logical_cpus / (threads_per_core ? threads_per_core : 1);
+}
+
 // Computes each 64-value dot product in int32, then applies the input and weight scales.
 void matmul_int8(float *result, const int8_t *input, const float *input_scales,
                  const Tensor *weight, size_t token_count) {
@@ -204,6 +215,7 @@ void matmul_int8(float *result, const int8_t *input, const float *input_scales,
     size_t inputs = (size_t)weight->shape[1];
     size_t groups = inputs / 64;
     const int8_t *weights = (const int8_t *)weight->data;
+    #pragma omp for collapse(2) schedule(static)
     for (size_t token = 0; token < token_count; token++) {
         const int8_t *input_row = input + token * inputs;
         const float *scales = input_scales + token * groups;
@@ -223,6 +235,7 @@ void matmul_int8(float *result, const int8_t *input, const float *input_scales,
 
 // Converts each input row to int8 in groups of 64 values with a float scale recording each group's magnitude.
 void quantize(int8_t *quantized, float *scales, const float *input, size_t rows, size_t width) {
+    #pragma omp for schedule(static)
     for (size_t group = 0; group < rows * (width / 64); group++) {
         const float *values = input + group * 64;
         float max_abs = 0.0f;
@@ -253,6 +266,7 @@ void geglu(float *gate, const float *up, int rows, int width, int up_stride, con
     const float lower = (float)gelu_table->shape[1];
     const float upper = (float)gelu_table->shape[2];
     const float scale = (float)(table_size - 1) / (upper - lower);
+    #pragma omp for collapse(2) schedule(static)
     for (int row = 0; row < rows; row++) {
         for (int i = 0; i < width; i++) {
             float x = gate[row * width + i];
@@ -276,6 +290,7 @@ void geglu(float *gate, const float *up, int rows, int width, int up_stride, con
 void embedding(float *output, const Tensor *table, const int *tokens, size_t token_count, float multiplier) {
     int width = table->shape[1];
     int groups = width / 64;
+    #pragma omp for schedule(static)
     for (size_t token = 0; token < token_count; token++) {
         float *vector = output + token * width;
         const int8_t *row = (const int8_t *)table->data + (size_t)tokens[token] * width;
@@ -290,6 +305,7 @@ void embedding(float *output, const Tensor *table, const int *tokens, size_t tok
 
 void rmsnorm(float *output, const float *input, const Tensor *weight, int width, float epsilon, size_t rows) {
     const float *weights = weight ? (const float *)weight->data : NULL;
+    #pragma omp for schedule(static)
     for (size_t row = 0; row < rows; row++) {
         const float *input_row = input + row * width;
         float *output_row = output + row * width;
@@ -303,6 +319,7 @@ void rmsnorm(float *output, const float *input, const Tensor *weight, int width,
 }
 
 void add_and_scale(float *output, const float *addend, size_t count, float scale) {
+    #pragma omp for schedule(static)
     for (size_t i = 0; i < count; i++) output[i] = (output[i] + addend[i]) * scale;
 }
 
@@ -310,6 +327,7 @@ void add_and_scale(float *output, const float *addend, size_t count, float scale
 void apply_rope(const Tensor *cosines, const Tensor *sines, float *vectors,
                 int num_heads, int head_dim, int start_pos, size_t token_count) {
     int pairs = cosines->shape[1];
+    #pragma omp for schedule(static)
     for (size_t token = 0; token < token_count; token++) {
         const float *cosine = (float *)cosines->data + (start_pos + token) * pairs;
         const float *sine = (float *)sines->data + (start_pos + token) * pairs;
@@ -370,6 +388,7 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
 
     // Each head scores its query against the visible keys and averages their values.
     // Sliding-window layers see the last 512 keys, full-attention layers see everything.
+    #pragma omp for collapse(2) schedule(dynamic, 1)
     for (size_t head = 0; head < (size_t)(query_width / head_dim); head++) {
         for (size_t token = 0; token < token_count; token++) {
             int first_key = !is_full_attention && start_pos + (int)token + 1 > SLIDING_WINDOW ? start_pos + (int)token + 1 - SLIDING_WINDOW : 0;
@@ -392,6 +411,8 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
 
 void forward(Model *model, InferenceState *state, const int *tokens, size_t token_count, int start_pos) {
     int per_layer_width = model->weights.per_layer_projection_norm.shape[0];
+    #pragma omp parallel num_threads(thread_count())
+    {
     float scores[(size_t)start_pos + token_count];
     embedding(state->residual, &model->weights.embed, tokens, token_count, sqrtf((float)HIDDEN_SIZE));
 
@@ -432,14 +453,19 @@ void forward(Model *model, InferenceState *state, const int *tokens, size_t toke
         rmsnorm(state->hidden, state->hidden, &weights->post_per_layer_input_norm, HIDDEN_SIZE, 1e-6f, token_count);
         add_and_scale(state->residual, state->hidden, token_count * HIDDEN_SIZE, ((float *)weights->layer_scalar.data)[0]);
     }
+    }
 }
 
 // Reuses the embedding matrix to turn the final token representation into vocabulary logits, then applies Gemma's tanh soft cap.
 float *logits(Model *model, InferenceState *state, size_t row) {
+    #pragma omp parallel num_threads(thread_count())
+    {
     rmsnorm(state->hidden, state->residual + row * HIDDEN_SIZE, &model->weights.norm, HIDDEN_SIZE, 1e-6f, 1);
     quantize(state->quantized, state->activation_scales, state->hidden, 1, HIDDEN_SIZE);
     matmul_int8(state->logits, state->quantized, state->activation_scales, &model->weights.embed, 1);
+    #pragma omp for schedule(static)
     for (int i = 0; i < VOCAB_SIZE; i++) state->logits[i] = 30.0f * tanhf(state->logits[i] / 30.0f);
+    }
     return state->logits;
 }
 
