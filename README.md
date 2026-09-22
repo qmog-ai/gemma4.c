@@ -21,15 +21,15 @@ make
 ## Numerical validation
 
 ```sh
-python3 validation.py 64
+python3 validation.py 512
 ```
 
 | Metric | Result |
 | --- | ---: |
-| Mean KL divergence | 0.005276 |
-| Top-1 agreement | 92.2% (59/64) |
-| Mean absolute error | 0.199132 |
-| Mean cosine similarity | 0.997996 |
+| Mean KL divergence | 0.004557 |
+| Top-1 agreement | 95.5% (489/512) |
+| Mean absolute error | 0.155311 |
+| Mean cosine similarity | 0.998817 |
 
 ## Performance
 
@@ -37,21 +37,22 @@ python3 validation.py 64
 ./benchmark -m MODEL --pp PP --tg TG --d DEPTH
 ```
 
-Benchmarked on an eight-core Ryzen 7 7700 using one thread. Each result is the median of
-three runs after one discarded warmup.
+Benchmarked on an eight-core Ryzen 7 7700 using one OpenMP thread per physical core.
+Each result is the median of three runs after one discarded warmup.
+`perf` cycle shares are from one run with the three kernels temporarily marked `noinline`; this changed throughput by less than 0.3%.
 
 ### Decode
 
-| Starting context | Decode (tg128) |
-| ---: | ---: |
-| 0 | 10.16 tok/s |
-| 256 | 9.03 tok/s |
-| 512 | 8.25 tok/s |
+| Starting context | Decode (tg128) | `dot_i8` | `dot_f32` | Value sum |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 25.00 tok/s | 79.45% | 0.91% | 0.16% |
+| 512 | 23.13 tok/s | 75.90% | 4.65% | 0.93% |
+| 1,024 | 22.47 tok/s | 73.68% | 6.69% | 1.35% |
 
 ### Prefill
 
-| Prompt length | Prefill |
-| ---: | ---: |
-| 64 | 12.51 tok/s |
-| 256 | 11.88 tok/s |
-| 512 | 11.07 tok/s |
+| Prompt length | Prefill | `dot_i8` | `dot_f32` | Value sum |
+| ---: | ---: | ---: | ---: | ---: |
+| 128 | 30.29 tok/s | 78.65% | 1.15% | 0.19% |
+| 512 | 29.13 tok/s | 76.65% | 3.99% | 0.75% |
+| 1,024 | 28.15 tok/s | 73.99% | 6.45% | 1.30% |
