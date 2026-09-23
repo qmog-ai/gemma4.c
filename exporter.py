@@ -23,6 +23,7 @@ SPECIAL_MAX = 256
 ENCODE_VOCAB_MAX = 32768
 MERGES_MAX = 514906
 GROUP_SIZE = 64
+BLOCK_ROWS = 16
 
 TOKENIZER_SPAN = 33_429_932
 # data, scales, shape[4] — matches C Tensor (32 bytes)
@@ -54,7 +55,7 @@ def tensor(weights, path, synthetic=None):
     if not 1 <= len(shape) <= 2 or any(size <= 0 for size in shape):
         raise ValueError(f"unsupported shape for {path}: {shape}")
     quantized = synthetic is None and len(shape) == 2
-    if quantized and shape[1] % GROUP_SIZE:
+    if quantized and (shape[0] % BLOCK_ROWS or shape[1] % GROUP_SIZE):
         raise ValueError(f"cannot quantize {path} with shape {shape}")
     count = math.prod(shape)
     result = {
@@ -281,6 +282,7 @@ def write_tensor(output, weights, tensor, progress):
     elif len(tensor["shape"]) == 2:
         total_rows, columns = tensor["shape"]
         chunk_rows = max(1, (16 * 1024 * 1024) // columns)
+        chunk_rows = max(BLOCK_ROWS, chunk_rows - chunk_rows % BLOCK_ROWS)
         arrays = (read_weight(weights, tensor["path"],
                               slice(start, min(total_rows, start + chunk_rows)))
                   for start in range(0, total_rows, chunk_rows))
@@ -298,6 +300,12 @@ def write_tensor(output, weights, tensor, progress):
             continue
 
         values, scales = quantize(array)
+        rows, columns = array.shape
+        groups = columns // GROUP_SIZE
+        values = values.reshape(rows // BLOCK_ROWS, BLOCK_ROWS, groups, 16, 4)
+        values = values.transpose(0, 2, 3, 1, 4).reshape(-1)
+        scales = scales.reshape(rows // BLOCK_ROWS, BLOCK_ROWS, groups)
+        scales = scales.transpose(0, 2, 1).reshape(-1)
         output.seek(data_at)
         output.write(values.tobytes())
         data_at += values.nbytes
@@ -331,7 +339,7 @@ def export(checkpoint_path, output_path):
             with tempfile.NamedTemporaryFile(dir=directory, delete=False) as output:
                 temporary_path = Path(output.name)
                 output.truncate(file_size)
-                output.write(b"MOF\0")
+                output.write(b"MOP\0")
                 output.write(tokenizer)
                 for item in text:
                     record = tensor_record(item) if item else bytes(TENSOR_RECORD.size)
