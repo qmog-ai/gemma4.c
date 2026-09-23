@@ -14,6 +14,7 @@ its own.
 | Row-major tiling | [`03-row-major-tiling/gemma4.c`](../f32-optimization-snapshots/03-row-major-tiling/gemma4.c) | Compute several token rows together without changing weight layout | 636 | +40/−21 |
 | Packed weights | [`04-packed-weights/gemma4.c`](../f32-optimization-snapshots/04-packed-weights/gemma4.c) | Pack 16 weight rows in the exporter and compute their outputs together | 640 | C +66/−62; exporter +10/−2 |
 | Tiled-query attention | [`05-tiled-query-attention/gemma4.c`](../f32-optimization-snapshots/05-tiled-query-attention/gemma4.c) | Reuse each cached key and value across four prefill queries once the context reaches 512 tokens | 726 | +97/−11 |
+| Online-softmax attention | [`06-online-softmax-attention/gemma4.c`](../f32-optimization-snapshots/06-online-softmax-attention/gemma4.c) | Fuse tiled scoring, softmax, and value accumulation without a score buffer | 725 | +40/−41 |
 
 Final `main` is 700 lines. The clean packed endpoint is 640 lines; the
 tiled-query experiment is 726 lines because it deliberately retains the
@@ -49,11 +50,17 @@ new prefill path does not measurably change decode.
 | --- | ---: | ---: | ---: | ---: |
 | Published final `main` | 630.73 | 494.14 | 254.02 | 106.36 |
 | Tiled-query attention | 635.23 | 521.36 | 332.57 | 206.77 |
+| Online-softmax attention | 588.57 | 464.89 | 275.80 | 173.86 |
 | llama.cpp | 272.69 | 258.56 | 223.99 | 188.60 |
 
 The simple attention loop handles the first 512 tokens. Later prefill batches
 process four queries together, loading each cached key and value once for all
 four. This removes the sharp long-prompt collapse without changing decode.
+
+Online softmax was slower. It avoids materializing attention scores, but each
+new key makes it rescale and rewrite every value in four 256-float output
+vectors. On this CPU that costs more than storing scalar scores and reading the
+value cache in a second pass.
 
 ## Numerical validation
 
@@ -74,6 +81,11 @@ check. Row-major tiling is identical to the preceding SIMD-attention runtime.
 SIMD attention and packing change floating-point accumulation order but do not
 increase divergence materially. A longer validation is still required before
 promoting any experiment into the real history.
+
+The two long-context attention paths were also checked over 1,024 positions.
+Tiled-query attention reached mean KL 0.004132 and 985/1024 top-1 agreement;
+online-softmax attention reached 0.004034 and 983/1024. Both are numerically
+sound, with the difference caused by accumulation order.
 
 ## AVX2 fallback
 
@@ -99,6 +111,8 @@ build: mean KL 0.005374 and 60/64 top-1 agreement.
   doubles pp16384 relative to final `main` while leaving decode unchanged, but
   the first implementation adds 86 net lines and should be simplified before
   becoming part of the article history.
+- Online softmax is not worth keeping in this form. It reduces pp16384 by
+  15.9% relative to tiled-query attention and falls behind llama.cpp there.
 
 For the real history, the evidence supports SIMD matmul next, then SIMD
 attention. Row-major tiling should remain a documented experiment rather than
