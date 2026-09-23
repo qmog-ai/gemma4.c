@@ -13,8 +13,11 @@ its own.
 | SIMD attention | [`02-simd-attention/gemma4.c`](../f32-optimization-snapshots/02-simd-attention/gemma4.c) | Vectorize query-key dots and weighted value sums | 617 | +18/−8 |
 | Row-major tiling | [`03-row-major-tiling/gemma4.c`](../f32-optimization-snapshots/03-row-major-tiling/gemma4.c) | Compute several token rows together without changing weight layout | 636 | +40/−21 |
 | Packed weights | [`04-packed-weights/gemma4.c`](../f32-optimization-snapshots/04-packed-weights/gemma4.c) | Pack 16 weight rows in the exporter and compute their outputs together | 640 | C +66/−62; exporter +10/−2 |
+| Tiled-query attention | [`05-tiled-query-attention/gemma4.c`](../f32-optimization-snapshots/05-tiled-query-attention/gemma4.c) | Reuse each cached key and value across four prefill queries once the context reaches 512 tokens | 726 | +97/−11 |
 
-Final `main` is 700 lines. The clean packed endpoint is 640 lines.
+Final `main` is 700 lines. The clean packed endpoint is 640 lines; the
+tiled-query experiment is 726 lines because it deliberately retains the
+smaller single-query path for decode and short prefill.
 
 ## Method
 
@@ -32,8 +35,25 @@ cache to the stated depth. Model loading and cache filling are excluded.
 | SIMD attention | 114.52 | 25.21 | 24.41 | 24.09 |
 | Row-major tiling | 116.32 | 23.73 | 23.12 | 22.95 |
 | Packed weights | 609.62 | 25.25 | 24.47 | 24.14 |
+| Tiled-query attention | 635.23 | 24.64 | 24.00 | 23.80 |
 
 All values are tokens per second.
+
+Decode was also measured against the packed snapshot in the same warm machine
+state. The medians were 24.68, 24.12, and 23.78 tok/s, respectively, so the
+new prefill path does not measurably change decode.
+
+### Long prefill
+
+| Runtime | pp512 | pp2048 | pp8192 | pp16384 |
+| --- | ---: | ---: | ---: | ---: |
+| Published final `main` | 630.73 | 494.14 | 254.02 | 106.36 |
+| Tiled-query attention | 635.23 | 521.36 | 332.57 | 206.77 |
+| llama.cpp | 272.69 | 258.56 | 223.99 | 188.60 |
+
+The simple attention loop handles the first 512 tokens. Later prefill batches
+process four queries together, loading each cached key and value once for all
+four. This removes the sharp long-prompt collapse without changing decode.
 
 ## Numerical validation
 
@@ -47,6 +67,7 @@ same 64 positions.
 | SIMD attention | 0.005244 | 60/64 |
 | Row-major tiling | 0.005244 | 60/64 |
 | Packed weights | 0.005374 | 60/64 |
+| Tiled-query attention | 0.005374 | 60/64 |
 
 The SIMD matmul is numerically identical to the scalar dot product in this
 check. Row-major tiling is identical to the preceding SIMD-attention runtime.
@@ -74,6 +95,10 @@ build: mean KL 0.005374 and 60/64 top-1 agreement.
   improves pp512 by 5.24× and restores decode performance.
 - The 640-line packed endpoint reaches 96.6% of final `main`'s published pp512
   throughput while remaining substantially easier to read.
+- Tiling four prefill queries is the missing long-context optimization. It
+  doubles pp16384 relative to final `main` while leaving decode unchanged, but
+  the first implementation adds 86 net lines and should be simplified before
+  becoming part of the article history.
 
 For the real history, the evidence supports SIMD matmul next, then SIMD
 attention. Row-major tiling should remain a documented experiment rather than
