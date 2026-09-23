@@ -307,13 +307,21 @@ void weighted_value_sum(float *output, const float *probabilities, const float *
     }
 }
 
-void attention_scores_tiled(float *scores, int score_stride, const float *queries, int query_stride,
-                            const float *key_cache, const int *first_keys, const int *key_counts,
-                            int query_count, int cache_mask, int head_dim) {
+void online_attention_tiled(float *outputs, int output_stride, const float *queries, int query_stride,
+                            const float *key_cache, const float *value_cache, const int *first_keys,
+                            const int *key_counts, int query_count, int cache_mask, int head_dim) {
+    float maximums[ATTENTION_TILE], normalizers[ATTENTION_TILE];
+    for (int query = 0; query < query_count; query++) {
+        maximums[query] = -INFINITY;
+        normalizers[query] = 0.0f;
+        memset(outputs + query * output_stride, 0, (size_t)head_dim * sizeof(float));
+    }
+
     int first_key = first_keys[0];
     int last_key = first_keys[query_count - 1] + key_counts[query_count - 1];
     for (int key_index = first_key; key_index < last_key; key_index++) {
         const float *key = key_cache + (key_index & cache_mask) * head_dim;
+        const float *value = value_cache + (key_index & cache_mask) * head_dim;
         __m256 sum0[ATTENTION_TILE] = {0}, sum1[ATTENTION_TILE] = {0};
         for (int j = 0; j < head_dim; j += 16) {
             __m256 key0 = _mm256_loadu_ps(key + j);
@@ -324,45 +332,41 @@ void attention_scores_tiled(float *scores, int score_stride, const float *querie
                 sum1[query] = _mm256_fmadd_ps(_mm256_loadu_ps(query_vector + j + 8), key1, sum1[query]);
             }
         }
+
+        float old_scales[ATTENTION_TILE], weights[ATTENTION_TILE];
         for (int query = 0; query < query_count; query++) {
-            if (key_index < first_keys[query] || key_index >= first_keys[query] + key_counts[query]) continue;
+            if (key_index < first_keys[query] || key_index >= first_keys[query] + key_counts[query]) {
+                weights[query] = 0.0f;
+                continue;
+            }
             __m256 sum8 = _mm256_add_ps(sum0[query], sum1[query]);
             __m128 sum4 = _mm_add_ps(_mm256_castps256_ps128(sum8), _mm256_extractf128_ps(sum8, 1));
             sum4 = _mm_add_ps(sum4, _mm_movehl_ps(sum4, sum4));
-            scores[query * score_stride + key_index - first_keys[query]] = _mm_cvtss_f32(_mm_add_ss(sum4, _mm_movehdup_ps(sum4)));
+            float score = _mm_cvtss_f32(_mm_add_ss(sum4, _mm_movehdup_ps(sum4)));
+            float new_maximum = fmaxf(maximums[query], score);
+            old_scales[query] = normalizers[query] ? expf(maximums[query] - new_maximum) : 0.0f;
+            weights[query] = expf(score - new_maximum);
+            normalizers[query] = normalizers[query] * old_scales[query] + weights[query];
+            maximums[query] = new_maximum;
         }
-    }
-}
 
-void weighted_value_sum_tiled(float *outputs, int output_stride, const float *probabilities, int score_stride,
-                              const float *value_cache, const int *first_keys, const int *key_counts,
-                              int query_count, int cache_mask, int head_dim) {
-    int first_key = first_keys[0];
-    int last_key = first_keys[query_count - 1] + key_counts[query_count - 1];
-    for (int j = 0; j < head_dim; j += 32) {
-        __m256 sum0[ATTENTION_TILE] = {0}, sum1[ATTENTION_TILE] = {0};
-        __m256 sum2[ATTENTION_TILE] = {0}, sum3[ATTENTION_TILE] = {0};
-        for (int key_index = first_key; key_index < last_key; key_index++) {
-            const float *value = value_cache + (key_index & cache_mask) * head_dim + j;
-            __m256 value0 = _mm256_loadu_ps(value);
-            __m256 value1 = _mm256_loadu_ps(value + 8);
-            __m256 value2 = _mm256_loadu_ps(value + 16);
-            __m256 value3 = _mm256_loadu_ps(value + 24);
+        for (int j = 0; j < head_dim; j += 8) {
+            __m256 value8 = _mm256_loadu_ps(value + j);
             for (int query = 0; query < query_count; query++) {
-                if (key_index < first_keys[query] || key_index >= first_keys[query] + key_counts[query]) continue;
-                __m256 probability = _mm256_set1_ps(probabilities[query * score_stride + key_index - first_keys[query]]);
-                sum0[query] = _mm256_fmadd_ps(probability, value0, sum0[query]);
-                sum1[query] = _mm256_fmadd_ps(probability, value1, sum1[query]);
-                sum2[query] = _mm256_fmadd_ps(probability, value2, sum2[query]);
-                sum3[query] = _mm256_fmadd_ps(probability, value3, sum3[query]);
+                if (weights[query] == 0.0f) continue;
+                float *output = outputs + query * output_stride + j;
+                __m256 previous = _mm256_loadu_ps(output);
+                __m256 scaled = _mm256_mul_ps(previous, _mm256_set1_ps(old_scales[query]));
+                _mm256_storeu_ps(output, _mm256_fmadd_ps(value8, _mm256_set1_ps(weights[query]), scaled));
             }
         }
-        for (int query = 0; query < query_count; query++) {
-            float *output = outputs + query * output_stride + j;
-            _mm256_storeu_ps(output, sum0[query]);
-            _mm256_storeu_ps(output + 8, sum1[query]);
-            _mm256_storeu_ps(output + 16, sum2[query]);
-            _mm256_storeu_ps(output + 24, sum3[query]);
+    }
+
+    for (int query = 0; query < query_count; query++) {
+        __m256 inverse = _mm256_set1_ps(1.0f / normalizers[query]);
+        float *output = outputs + query * output_stride;
+        for (int j = 0; j < head_dim; j += 8) {
+            _mm256_storeu_ps(output + j, _mm256_mul_ps(_mm256_loadu_ps(output + j), inverse));
         }
     }
 }
@@ -523,15 +527,10 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
                     first_keys[query] = !is_full_attention && position + 1 > SLIDING_WINDOW ? position + 1 - SLIDING_WINDOW : 0;
                     key_counts[query] = position + 1 - first_keys[query];
                 }
-                int score_stride = start_pos + (int)token_count;
                 float *head_output = state->hidden + token * query_width + head * head_dim;
                 const float *queries = state->auxiliary + token * query_width + head * head_dim;
-                attention_scores_tiled(scores, score_stride, queries, query_width, key_cache,
-                                       first_keys, key_counts, query_count, cache_mask, head_dim);
-                for (int query = 0; query < query_count; query++)
-                    softmax(scores + query * score_stride, key_counts[query]);
-                weighted_value_sum_tiled(head_output, query_width, scores, score_stride, value_cache,
-                                         first_keys, key_counts, query_count, cache_mask, head_dim);
+                online_attention_tiled(head_output, query_width, queries, query_width, key_cache,
+                                       value_cache, first_keys, key_counts, query_count, cache_mask, head_dim);
             }
         }
     }
@@ -545,7 +544,7 @@ void forward(Model *model, InferenceState *state, const int *tokens, size_t toke
     int per_layer_width = model->weights.per_layer_projection_norm.shape[0];
     #pragma omp parallel
     {
-    float scores[(token_count > 1 ? ATTENTION_TILE : 1) * ((size_t)start_pos + token_count)];
+    float scores[(size_t)start_pos + token_count];
     embedding(state->residual, &model->weights.embed, tokens, token_count, sqrtf((float)HIDDEN_SIZE));
 
     // Build the token-conditioned input that each transformer layer will receive.
