@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <immintrin.h>
 
 #define NUM_LAYERS 35
 #define HIDDEN_SIZE 1536
@@ -188,6 +189,32 @@ Model *load_model(const char *path, size_t *size) {
 // ----------------------------------------------------------------------------
 // Kernels
 
+static inline int32_t horizontal_sum(__m256i values) {
+    __m128i sum = _mm_add_epi32(_mm256_castsi256_si128(values), _mm256_extracti128_si256(values, 1));
+    sum = _mm_hadd_epi32(sum, sum);
+    return _mm_cvtsi128_si32(_mm_hadd_epi32(sum, sum));
+}
+
+static inline int32_t dot64(const int8_t *input, const int8_t *weights) {
+#if defined(__AVX512VNNI__)
+    __m512i sum = _mm512_setzero_si512();
+    for (int k = 0; k < 64; k += 32) {
+        __m512i x = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(input + k)));
+        __m512i w = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
+        sum = _mm512_dpwssd_epi32(sum, x, w);
+    }
+    return _mm512_reduce_add_epi32(sum);
+#else
+    __m256i sum = _mm256_setzero_si256();
+    for (int k = 0; k < 64; k += 16) {
+        __m256i x = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(input + k)));
+        __m256i w = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
+        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(x, w));
+    }
+    return horizontal_sum(sum);
+#endif
+}
+
 // Computes each 64-value dot product in int32, then applies the input and weight scales.
 void matmul_int8(float *result, const int8_t *input, const float *input_scales,
                  const Tensor *weight, size_t rows) {
@@ -204,10 +231,8 @@ void matmul_int8(float *result, const int8_t *input, const float *input_scales,
             const float *scales = input_scales + row * groups;
             float sum = 0.0f;
             for (size_t group = 0; group < groups; group++) {
-                int32_t dot = 0;
                 size_t offset = group * 64;
-                for (size_t k = 0; k < 64; k++)
-                    dot += (int32_t)input_row[offset + k] * (int32_t)weight_row[offset + k];
+                int32_t dot = dot64(input_row + offset, weight_row + offset);
                 sum += (float)dot * scales[group] * weight_scales[group];
             }
             result[row * outputs + out] = sum;
