@@ -190,28 +190,6 @@ Model *load_model(const char *path, size_t *size) {
 // ----------------------------------------------------------------------------
 // Kernels
 
-static inline int32_t dot64(const int8_t *input, const int8_t *weights) {
-#if defined(__AVX512VNNI__)
-    __m512i sum = _mm512_setzero_si512();
-    for (int k = 0; k < 64; k += 32) {
-        __m512i x = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(input + k)));
-        __m512i w = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
-        sum = _mm512_dpwssd_epi32(sum, x, w);
-    }
-    return _mm512_reduce_add_epi32(sum);
-#else
-    __m256i sum = _mm256_setzero_si256();
-    for (int k = 0; k < 64; k += 16) {
-        __m256i x = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(input + k)));
-        __m256i w = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
-        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(x, w));
-    }
-    __m128i total = _mm_add_epi32(_mm256_castsi256_si128(sum), _mm256_extracti128_si256(sum, 1));
-    total = _mm_hadd_epi32(total, total);
-    return _mm_cvtsi128_si32(_mm_hadd_epi32(total, total));
-#endif
-}
-
 // Uses one OpenMP thread per physical core unless OMP_NUM_THREADS overrides it.
 static inline int thread_count(void) {
     unsigned int eax, ebx, ecx, edx;
@@ -221,6 +199,37 @@ static inline int thread_count(void) {
     return getenv("OMP_NUM_THREADS") ? omp_get_max_threads() : logical_cpus / (threads_per_core ? threads_per_core : 1);
 }
 
+#define ROW_TILE 2
+#if defined(__AVX512VNNI__)
+static inline void dot64_tokens(const int8_t *input, size_t stride, const int8_t *weights, size_t token_count, int32_t dots[ROW_TILE]) {
+    __m512i sums[ROW_TILE] = {0};
+    for (int k = 0; k < 64; k += 32) {
+        __m512i w = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
+        for (size_t token = 0; token < token_count; token++) {
+            __m512i x = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(input + token * stride + k)));
+            sums[token] = _mm512_dpwssd_epi32(sums[token], x, w);
+        }
+    }
+    for (size_t token = 0; token < token_count; token++) dots[token] = _mm512_reduce_add_epi32(sums[token]);
+}
+#else
+static inline void dot64_tokens(const int8_t *input, size_t stride, const int8_t *weights, size_t token_count, int32_t dots[ROW_TILE]) {
+    __m256i sums[ROW_TILE] = {0};
+    for (int k = 0; k < 64; k += 16) {
+        __m256i w = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
+        for (size_t token = 0; token < token_count; token++) {
+            __m256i x = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(input + token * stride + k)));
+            sums[token] = _mm256_add_epi32(sums[token], _mm256_madd_epi16(x, w));
+        }
+    }
+    for (size_t token = 0; token < token_count; token++) {
+        __m128i total = _mm_add_epi32(_mm256_castsi256_si128(sums[token]), _mm256_extracti128_si256(sums[token], 1));
+        total = _mm_hadd_epi32(total, total);
+        dots[token] = _mm_cvtsi128_si32(_mm_hadd_epi32(total, total));
+    }
+}
+#endif
+
 // Computes each 64-value dot product in int32, then applies the input and weight scales.
 void matmul_int8(float *result, const int8_t *input, const float *input_scales,
                  const Tensor *weight, size_t token_count) {
@@ -229,19 +238,24 @@ void matmul_int8(float *result, const int8_t *input, const float *input_scales,
     size_t groups = inputs / 64;
     const int8_t *weights = (const int8_t *)weight->data;
     #pragma omp for schedule(static)
-    for (size_t weight_row = 0; weight_row < outputs; weight_row++) {
-        const int8_t *row_weights = weights + weight_row * inputs;
-        const float *weight_scales = weight->scales + weight_row * groups;
-        for (size_t token = 0; token < token_count; token++) {
-            const int8_t *input_row = input + token * inputs;
-            const float *scales = input_scales + token * groups;
-            float sum = 0.0f;
+    for (size_t output_block = 0; output_block < outputs; output_block += 16) {
+        for (size_t token_start = 0; token_start < token_count; token_start += ROW_TILE) {
+            size_t active_tokens = token_count - token_start < ROW_TILE ? token_count - token_start : ROW_TILE;
+            float sums[ROW_TILE][16] = {0};
             for (size_t group = 0; group < groups; group++) {
                 size_t offset = group * 64;
-                int32_t dot = dot64(input_row + offset, row_weights + offset);
-                sum += (float)dot * scales[group] * weight_scales[group];
+                for (size_t lane = 0; lane < 16; lane++) {
+                    size_t weight_row = output_block + lane;
+                    int32_t dots[ROW_TILE];
+                    dot64_tokens(input + token_start * inputs + offset, inputs, weights + weight_row * inputs + offset, active_tokens, dots);
+                    float weight_scale = weight->scales[weight_row * groups + group];
+                    for (size_t token = 0; token < active_tokens; token++)
+                        sums[token][lane] += (float)dots[token] * input_scales[(token_start + token) * groups + group] * weight_scale;
+                }
             }
-            result[token * outputs + weight_row] = sum;
+            for (size_t token = 0; token < active_tokens; token++)
+                for (size_t lane = 0; lane < 16; lane++)
+                    result[(token_start + token) * outputs + output_block + lane] = sums[token][lane];
         }
     }
 }
