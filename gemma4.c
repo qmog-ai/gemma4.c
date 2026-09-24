@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <immintrin.h>
 
 #define NUM_LAYERS 35
 #define HIDDEN_SIZE 1536
@@ -21,7 +22,7 @@
 #define SLIDING_WINDOW 512
 #define SLIDING_CACHE_SIZE (2 * SLIDING_WINDOW)
 #ifndef BATCH_SIZE
-#define BATCH_SIZE 4
+#define BATCH_SIZE 64
 #endif
 
 // ----------------------------------------------------------------------------
@@ -191,15 +192,37 @@ Model *load_model(const char *path, size_t *size) {
 // Kernels
 
 static inline int32_t dot_i8(const int8_t *input, const int8_t *weights) {
-    int32_t sum = 0;
-    for (int k = 0; k < 64; k++) sum += (int32_t)input[k] * (int32_t)weights[k];
-    return sum;
+#if defined(__AVX512VNNI__)
+    __m512i sum = _mm512_setzero_si512();
+    for (int k = 0; k < 64; k += 32) {
+        __m512i x = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(input + k)));
+        __m512i w = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
+        sum = _mm512_dpwssd_epi32(sum, x, w);
+    }
+    return _mm512_reduce_add_epi32(sum);
+#else
+    __m256i sum = _mm256_setzero_si256();
+    for (int k = 0; k < 64; k += 16) {
+        __m256i x = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(input + k)));
+        __m256i w = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
+        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(x, w));
+    }
+    __m128i total = _mm_add_epi32(_mm256_castsi256_si128(sum), _mm256_extracti128_si256(sum, 1));
+    total = _mm_hadd_epi32(total, total);
+    return _mm_cvtsi128_si32(_mm_hadd_epi32(total, total));
+#endif
 }
 
 static inline float dot_f32(const float *a, const float *b, int n) {
-    float sum = 0.0f;
-    for (int i = 0; i < n; i++) sum += a[i] * b[i];
-    return sum;
+    __m256 sum0 = _mm256_setzero_ps(), sum1 = _mm256_setzero_ps();
+    for (int i = 0; i < n; i += 16) {
+        sum0 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i), _mm256_loadu_ps(b + i), sum0);
+        sum1 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i + 8), _mm256_loadu_ps(b + i + 8), sum1);
+    }
+    __m256 sum8 = _mm256_add_ps(sum0, sum1);
+    __m128 sum4 = _mm_add_ps(_mm256_castps256_ps128(sum8), _mm256_extractf128_ps(sum8, 1));
+    sum4 = _mm_add_ps(sum4, _mm_movehl_ps(sum4, sum4));
+    return _mm_cvtss_f32(_mm_add_ss(sum4, _mm_movehdup_ps(sum4)));
 }
 
 // Uses one OpenMP thread per physical core unless OMP_NUM_THREADS overrides it.
@@ -254,11 +277,15 @@ void quantize(int8_t *quantized, float *scales, const float *input, size_t rows,
 }
 
 void weighted_sum(float *output, const float *probabilities, const float *value_cache, int first_key, int key_count, int cache_mask, int head_dim) {
-    for (int j = 0; j < head_dim; j++) output[j] = 0.0f;
-    for (int key_offset = 0; key_offset < key_count; key_offset++) {
-        const float *value = value_cache + ((first_key + key_offset) & cache_mask) * head_dim;
-        float probability = probabilities[key_offset];
-        for (int j = 0; j < head_dim; j++) output[j] += probability * value[j];
+    for (int j = 0; j < head_dim; j += 64) {
+        __m256 sum[8] = {0};
+        for (int key_offset = 0; key_offset < key_count; key_offset++) {
+            const float *value = value_cache + ((first_key + key_offset) & cache_mask) * head_dim + j;
+            __m256 probability = _mm256_set1_ps(probabilities[key_offset]);
+            for (int i = 0; i < 8; i++)
+                sum[i] = _mm256_fmadd_ps(probability, _mm256_loadu_ps(value + i * 8), sum[i]);
+        }
+        for (int i = 0; i < 8; i++) _mm256_storeu_ps(output + j + i * 8, sum[i]);
     }
 }
 
