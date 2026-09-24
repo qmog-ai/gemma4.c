@@ -21,6 +21,7 @@
 #define MAX_CONTEXT 131072
 #define SLIDING_WINDOW 512
 #define SLIDING_CACHE_SIZE (2 * SLIDING_WINDOW)
+#define ATTENTION_TILE 4
 #ifndef BATCH_SIZE
 #define BATCH_SIZE 512
 #endif
@@ -199,27 +200,42 @@ static inline int thread_count(void) {
     return getenv("OMP_NUM_THREADS") ? omp_get_max_threads() : logical_cpus / (threads_per_core ? threads_per_core : 1);
 }
 
-static inline int32_t dot64(const int8_t *input, const int8_t *weights) {
 #if defined(__AVX512VNNI__)
-    __m512i sum = _mm512_setzero_si512();
+#define ROW_TILE 8
+static inline void dot64_rows(const int8_t *input, size_t stride, const int8_t *weights,
+                              size_t rows, int32_t dots[ROW_TILE]) {
+    __m512i sums[ROW_TILE] = {0};
     for (int k = 0; k < 64; k += 32) {
-        __m512i x = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(input + k)));
         __m512i w = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
-        sum = _mm512_dpwssd_epi32(sum, x, w);
+        for (size_t row = 0; row < rows; row++) {
+            __m512i x = _mm512_cvtepi8_epi16(
+                _mm256_loadu_si256((const __m256i *)(input + row * stride + k)));
+            sums[row] = _mm512_dpwssd_epi32(sums[row], x, w);
+        }
     }
-    return _mm512_reduce_add_epi32(sum);
-#else
-    __m256i sum = _mm256_setzero_si256();
-    for (int k = 0; k < 64; k += 16) {
-        __m256i x = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(input + k)));
-        __m256i w = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
-        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(x, w));
-    }
-    __m128i total = _mm_add_epi32(_mm256_castsi256_si128(sum), _mm256_extracti128_si256(sum, 1));
-    total = _mm_hadd_epi32(total, total);
-    return _mm_cvtsi128_si32(_mm_hadd_epi32(total, total));
-#endif
+    for (size_t row = 0; row < rows; row++) dots[row] = _mm512_reduce_add_epi32(sums[row]);
 }
+#else
+#define ROW_TILE 4
+static inline void dot64_rows(const int8_t *input, size_t stride, const int8_t *weights,
+                              size_t rows, int32_t dots[ROW_TILE]) {
+    __m256i sums[ROW_TILE] = {0};
+    for (int k = 0; k < 64; k += 16) {
+        __m256i w = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
+        for (size_t row = 0; row < rows; row++) {
+            __m256i x = _mm256_cvtepi8_epi16(
+                _mm_loadu_si128((const __m128i *)(input + row * stride + k)));
+            sums[row] = _mm256_add_epi32(sums[row], _mm256_madd_epi16(x, w));
+        }
+    }
+    for (size_t row = 0; row < rows; row++) {
+        __m128i total = _mm_add_epi32(_mm256_castsi256_si128(sums[row]),
+                                      _mm256_extracti128_si256(sums[row], 1));
+        total = _mm_hadd_epi32(total, total);
+        dots[row] = _mm_cvtsi128_si32(_mm_hadd_epi32(total, total));
+    }
+}
+#endif
 
 // Computes each 64-value dot product in int32, then applies the input and weight scales.
 void matmul_int8(float *result, const int8_t *input, const float *input_scales,
@@ -229,19 +245,26 @@ void matmul_int8(float *result, const int8_t *input, const float *input_scales,
     size_t groups = inputs / 64;
     const int8_t *weights = (const int8_t *)weight->data;
     #pragma omp for schedule(static)
-    for (size_t out = 0; out < outputs; out++) {
-        const int8_t *weight_row = weights + out * inputs;
-        const float *weight_scales = weight->scales + out * groups;
-        for (size_t row = 0; row < rows; row++) {
-            const int8_t *input_row = input + row * inputs;
-            const float *scales = input_scales + row * groups;
-            float sum = 0.0f;
+    for (size_t output_block = 0; output_block < outputs; output_block += 16) {
+        for (size_t row_start = 0; row_start < rows; row_start += ROW_TILE) {
+            size_t active_rows = rows - row_start < ROW_TILE ? rows - row_start : ROW_TILE;
+            float sums[ROW_TILE][16] = {0};
             for (size_t group = 0; group < groups; group++) {
-                size_t offset = group * 64;
-                int32_t dot = dot64(input_row + offset, weight_row + offset);
-                sum += (float)dot * scales[group] * weight_scales[group];
+                const int8_t *input_group = input + row_start * inputs + group * 64;
+                for (size_t lane = 0; lane < 16; lane++) {
+                    size_t out = output_block + lane;
+                    int32_t dots[ROW_TILE];
+                    dot64_rows(input_group, inputs, weights + out * inputs + group * 64,
+                               active_rows, dots);
+                    float weight_scale = weight->scales[out * groups + group];
+                    for (size_t row = 0; row < active_rows; row++)
+                        sums[row][lane] += (float)dots[row]
+                            * input_scales[(row_start + row) * groups + group] * weight_scale;
+                }
             }
-            result[row * outputs + out] = sum;
+            for (size_t row = 0; row < active_rows; row++)
+                for (size_t lane = 0; lane < 16; lane++)
+                    result[(row_start + row) * outputs + output_block + lane] = sums[row][lane];
         }
     }
 }
@@ -263,31 +286,56 @@ void quantize(int8_t *quantized, float *scales, const float *input, size_t rows,
     }
 }
 
-void attention_scores(float *scores, const float *query, const float *key_cache, int first_key, int key_count, int cache_mask, int head_dim) {
-    for (int key_offset = 0; key_offset < key_count; key_offset++) {
-        const float *key = key_cache + ((first_key + key_offset) & cache_mask) * head_dim;
-        __m256 sum0 = _mm256_setzero_ps(), sum1 = _mm256_setzero_ps();
+static inline float horizontal_sum(__m256 values) {
+    __m128 sum = _mm_add_ps(_mm256_castps256_ps128(values), _mm256_extractf128_ps(values, 1));
+    sum = _mm_add_ps(sum, _mm_movehl_ps(sum, sum));
+    return _mm_cvtss_f32(_mm_add_ss(sum, _mm_movehdup_ps(sum)));
+}
+
+void attention_scores(float *scores, int score_stride, const float *queries, int query_stride,
+                      const float *key_cache, const int *first_keys, const int *key_counts,
+                      int query_count, int cache_mask, int head_dim) {
+    int last_key = first_keys[query_count - 1] + key_counts[query_count - 1];
+    for (int key_index = first_keys[0]; key_index < last_key; key_index++) {
+        const float *key = key_cache + (key_index & cache_mask) * head_dim;
+        __m256 sum0[ATTENTION_TILE] = {0}, sum1[ATTENTION_TILE] = {0};
         for (int j = 0; j < head_dim; j += 16) {
-            sum0 = _mm256_fmadd_ps(_mm256_loadu_ps(query + j), _mm256_loadu_ps(key + j), sum0);
-            sum1 = _mm256_fmadd_ps(_mm256_loadu_ps(query + j + 8), _mm256_loadu_ps(key + j + 8), sum1);
+            __m256 key0 = _mm256_loadu_ps(key + j);
+            __m256 key1 = _mm256_loadu_ps(key + j + 8);
+            for (int query = 0; query < query_count; query++) {
+                const float *q = queries + query * query_stride;
+                sum0[query] = _mm256_fmadd_ps(_mm256_loadu_ps(q + j), key0, sum0[query]);
+                sum1[query] = _mm256_fmadd_ps(_mm256_loadu_ps(q + j + 8), key1, sum1[query]);
+            }
         }
-        __m256 sum8 = _mm256_add_ps(sum0, sum1);
-        __m128 sum4 = _mm_add_ps(_mm256_castps256_ps128(sum8), _mm256_extractf128_ps(sum8, 1));
-        sum4 = _mm_add_ps(sum4, _mm_movehl_ps(sum4, sum4));
-        scores[key_offset] = _mm_cvtss_f32(_mm_add_ss(sum4, _mm_movehdup_ps(sum4)));
+        for (int query = 0; query < query_count; query++)
+            if (key_index >= first_keys[query] && key_index < first_keys[query] + key_counts[query])
+                scores[query * score_stride + key_index - first_keys[query]] =
+                    horizontal_sum(_mm256_add_ps(sum0[query], sum1[query]));
     }
 }
 
-void weighted_value_sum(float *output, const float *probabilities, const float *value_cache, int first_key, int key_count, int cache_mask, int head_dim) {
-    for (int j = 0; j < head_dim; j += 64) {
-        __m256 sum[8] = {0};
-        for (int key_offset = 0; key_offset < key_count; key_offset++) {
-            const float *value = value_cache + ((first_key + key_offset) & cache_mask) * head_dim + j;
-            __m256 probability = _mm256_set1_ps(probabilities[key_offset]);
-            for (int i = 0; i < 8; i++)
-                sum[i] = _mm256_fmadd_ps(probability, _mm256_loadu_ps(value + i * 8), sum[i]);
+void weighted_value_sum(float *outputs, int output_stride, const float *probabilities, int score_stride,
+                        const float *value_cache, const int *first_keys, const int *key_counts,
+                        int query_count, int cache_mask, int head_dim) {
+    int last_key = first_keys[query_count - 1] + key_counts[query_count - 1];
+    for (int j = 0; j < head_dim; j += 32) {
+        __m256 sums[ATTENTION_TILE][4] = {0};
+        for (int key_index = first_keys[0]; key_index < last_key; key_index++) {
+            const float *value = value_cache + (key_index & cache_mask) * head_dim + j;
+            __m256 values[4];
+            for (int lane = 0; lane < 4; lane++) values[lane] = _mm256_loadu_ps(value + lane * 8);
+            for (int query = 0; query < query_count; query++) {
+                if (key_index < first_keys[query] || key_index >= first_keys[query] + key_counts[query]) continue;
+                __m256 probability = _mm256_set1_ps(
+                    probabilities[query * score_stride + key_index - first_keys[query]]);
+                for (int lane = 0; lane < 4; lane++)
+                    sums[query][lane] = _mm256_fmadd_ps(probability, values[lane], sums[query][lane]);
+            }
         }
-        for (int i = 0; i < 8; i++) _mm256_storeu_ps(output + j + i * 8, sum[i]);
+        for (int query = 0; query < query_count; query++)
+            for (int lane = 0; lane < 4; lane++)
+                _mm256_storeu_ps(outputs + query * output_stride + j + lane * 8, sums[query][lane]);
     }
 }
 
@@ -422,14 +470,24 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
     // Sliding-window layers see the last 512 keys, full-attention layers see everything.
     #pragma omp for collapse(2) schedule(dynamic, 1)
     for (size_t head = 0; head < (size_t)(query_width / head_dim); head++) {
-        for (size_t token = 0; token < token_count; token++) {
-            int first_key = !is_full_attention && start_pos + (int)token + 1 > SLIDING_WINDOW ? start_pos + (int)token + 1 - SLIDING_WINDOW : 0;
-            int key_count = start_pos + (int)token + 1 - first_key;
+        for (size_t token = 0; token < token_count; token += ATTENTION_TILE) {
+            int query_count = token_count - token < ATTENTION_TILE ? (int)(token_count - token) : ATTENTION_TILE;
+            int first_keys[ATTENTION_TILE], key_counts[ATTENTION_TILE];
+            for (int query = 0; query < query_count; query++) {
+                int position = start_pos + (int)token + query;
+                first_keys[query] = !is_full_attention && position + 1 > SLIDING_WINDOW
+                    ? position + 1 - SLIDING_WINDOW : 0;
+                key_counts[query] = position + 1 - first_keys[query];
+            }
+            int score_stride = start_pos + (int)token_count;
             float *head_output = state->hidden + token * query_width + head * head_dim;
-            const float *query = state->auxiliary + token * query_width + head * head_dim;
-            attention_scores(scores, query, key_cache, first_key, key_count, cache_mask, head_dim);
-            softmax(scores, key_count);
-            weighted_value_sum(head_output, scores, value_cache, first_key, key_count, cache_mask, head_dim);
+            const float *queries = state->auxiliary + token * query_width + head * head_dim;
+            attention_scores(scores, score_stride, queries, query_width, key_cache,
+                             first_keys, key_counts, query_count, cache_mask, head_dim);
+            for (int query = 0; query < query_count; query++)
+                softmax(scores + query * score_stride, key_counts[query]);
+            weighted_value_sum(head_output, query_width, scores, score_stride, value_cache,
+                               first_keys, key_counts, query_count, cache_mask, head_dim);
         }
     }
 
@@ -442,7 +500,7 @@ void forward(Model *model, InferenceState *state, const int *tokens, size_t toke
     int per_layer_width = model->weights.per_layer_projection_norm.shape[0];
     #pragma omp parallel num_threads(thread_count())
     {
-    float scores[(size_t)start_pos + token_count];
+    float scores[(token_count > 1 ? ATTENTION_TILE : 1) * ((size_t)start_pos + token_count)];
     embedding(state->residual, &model->weights.embed, tokens, token_count, sqrtf((float)HIDDEN_SIZE));
 
     // Build the token-conditioned input that each transformer layer will receive.

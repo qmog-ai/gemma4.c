@@ -44,16 +44,16 @@ Each throughput result is the median of three runs after one discarded warmup.
 
 | Starting context | Decode (tg128) |
 | ---: | ---: |
-| 0 | 25.24 tok/s |
-| 512 | 24.39 tok/s |
-| 1,024 | 24.08 tok/s |
-| 4,096 | 22.06 tok/s |
+| 0 | 23.69 tok/s |
+| 512 | 22.68 tok/s |
+| 1,024 | 22.27 tok/s |
+| 4,096 | 20.07 tok/s |
 
 ### Prefill
 
 | Prompt length | Prefill |
 | ---: | ---: |
-| 128 | 118.40 tok/s |
-| 512 | 115.32 tok/s |
-| 1,024 | 113.12 tok/s |
-| 4,096 | 104.32 tok/s |
+| 128 | 118.83 tok/s |
+| 512 | 116.46 tok/s |
+| 1,024 | 114.18 tok/s |
+| 4,096 | 107.19 tok/s |
