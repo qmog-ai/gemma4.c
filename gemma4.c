@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <immintrin.h>
 
 #define NUM_LAYERS 35
 #define HIDDEN_SIZE 1536
@@ -198,6 +199,28 @@ static inline int thread_count(void) {
     return getenv("OMP_NUM_THREADS") ? omp_get_max_threads() : logical_cpus / (threads_per_core ? threads_per_core : 1);
 }
 
+static inline int32_t dot64(const int8_t *input, const int8_t *weights) {
+#if defined(__AVX512VNNI__)
+    __m512i sum = _mm512_setzero_si512();
+    for (int k = 0; k < 64; k += 32) {
+        __m512i x = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(input + k)));
+        __m512i w = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
+        sum = _mm512_dpwssd_epi32(sum, x, w);
+    }
+    return _mm512_reduce_add_epi32(sum);
+#else
+    __m256i sum = _mm256_setzero_si256();
+    for (int k = 0; k < 64; k += 16) {
+        __m256i x = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(input + k)));
+        __m256i w = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
+        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(x, w));
+    }
+    __m128i total = _mm_add_epi32(_mm256_castsi256_si128(sum), _mm256_extracti128_si256(sum, 1));
+    total = _mm_hadd_epi32(total, total);
+    return _mm_cvtsi128_si32(_mm_hadd_epi32(total, total));
+#endif
+}
+
 // Computes each 64-value dot product in int32, then applies the input and weight scales.
 void matmul_int8(float *result, const int8_t *input, const float *input_scales,
                  const Tensor *weight, size_t rows) {
@@ -214,10 +237,8 @@ void matmul_int8(float *result, const int8_t *input, const float *input_scales,
             const float *scales = input_scales + row * groups;
             float sum = 0.0f;
             for (size_t group = 0; group < groups; group++) {
-                int32_t dot = 0;
                 size_t offset = group * 64;
-                for (size_t k = 0; k < 64; k++)
-                    dot += (int32_t)input_row[offset + k] * (int32_t)weight_row[offset + k];
+                int32_t dot = dot64(input_row + offset, weight_row + offset);
                 sum += (float)dot * scales[group] * weight_scales[group];
             }
             result[row * outputs + out] = sum;
@@ -245,18 +266,28 @@ void quantize(int8_t *quantized, float *scales, const float *input, size_t rows,
 void attention_scores(float *scores, const float *query, const float *key_cache, int first_key, int key_count, int cache_mask, int head_dim) {
     for (int key_offset = 0; key_offset < key_count; key_offset++) {
         const float *key = key_cache + ((first_key + key_offset) & cache_mask) * head_dim;
-        float sum = 0.0f;
-        for (int j = 0; j < head_dim; j++) sum += query[j] * key[j];
-        scores[key_offset] = sum;
+        __m256 sum0 = _mm256_setzero_ps(), sum1 = _mm256_setzero_ps();
+        for (int j = 0; j < head_dim; j += 16) {
+            sum0 = _mm256_fmadd_ps(_mm256_loadu_ps(query + j), _mm256_loadu_ps(key + j), sum0);
+            sum1 = _mm256_fmadd_ps(_mm256_loadu_ps(query + j + 8), _mm256_loadu_ps(key + j + 8), sum1);
+        }
+        __m256 sum8 = _mm256_add_ps(sum0, sum1);
+        __m128 sum4 = _mm_add_ps(_mm256_castps256_ps128(sum8), _mm256_extractf128_ps(sum8, 1));
+        sum4 = _mm_add_ps(sum4, _mm_movehl_ps(sum4, sum4));
+        scores[key_offset] = _mm_cvtss_f32(_mm_add_ss(sum4, _mm_movehdup_ps(sum4)));
     }
 }
 
 void weighted_value_sum(float *output, const float *probabilities, const float *value_cache, int first_key, int key_count, int cache_mask, int head_dim) {
-    for (int j = 0; j < head_dim; j++) output[j] = 0.0f;
-    for (int key_offset = 0; key_offset < key_count; key_offset++) {
-        const float *value = value_cache + ((first_key + key_offset) & cache_mask) * head_dim;
-        float probability = probabilities[key_offset];
-        for (int j = 0; j < head_dim; j++) output[j] += probability * value[j];
+    for (int j = 0; j < head_dim; j += 64) {
+        __m256 sum[8] = {0};
+        for (int key_offset = 0; key_offset < key_count; key_offset++) {
+            const float *value = value_cache + ((first_key + key_offset) & cache_mask) * head_dim + j;
+            __m256 probability = _mm256_set1_ps(probabilities[key_offset]);
+            for (int i = 0; i < 8; i++)
+                sum[i] = _mm256_fmadd_ps(probability, _mm256_loadu_ps(value + i * 8), sum[i]);
+        }
+        for (int i = 0; i < 8; i++) _mm256_storeu_ps(output + j + i * 8, sum[i]);
     }
 }
 
