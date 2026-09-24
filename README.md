@@ -26,10 +26,10 @@ python3 validation.py
 
 | Metric | Result |
 | --- | ---: |
-| Mean KL divergence | 0.004676 |
-| Top-1 agreement | 96.4% (2302/2388) |
-| Mean absolute error | 0.157333 |
-| Mean cosine similarity | 0.998926 |
+| Mean KL divergence | 0.004707 |
+| Top-1 agreement | 96.2% (2297/2388) |
+| Mean absolute error | 0.156529 |
+| Mean cosine similarity | 0.998921 |
 
 ## Performance
 
@@ -39,35 +39,21 @@ python3 validation.py
 
 Benchmarked on an eight-core Ryzen 7 7700 using one OpenMP thread per physical core.
 Each throughput result is the median of three runs after one discarded warmup.
-`perf` cycle shares are from one run.
 
 ### Decode
 
-| Starting context | Decode (tg128) | Matmul cycles | Attention cycles |
-| ---: | ---: | ---: | ---: |
-| 0 | 25.04 tok/s | 91.87% | 1.35% |
-| 512 | 23.13 tok/s | 84.65% | 8.76% |
-| 1,024 | 22.48 tok/s | 82.17% | 11.46% |
+| Starting context | Decode (tg128) |
+| ---: | ---: |
+| 0 | 25.24 tok/s |
+| 512 | 24.39 tok/s |
+| 1,024 | 24.08 tok/s |
+| 4,096 | 22.06 tok/s |
 
 ### Prefill
 
-| Prompt length | Prefill | Matmul cycles | Attention cycles |
-| ---: | ---: | ---: | ---: |
-| 128 | 94.90 tok/s | 93.66% | 3.85% |
-| 512 | 85.80 tok/s | 84.62% | 13.53% |
-| 1,024 | 78.85 tok/s | 77.49% | 20.69% |
-
-For a 512-token prompt, prefill becomes compute-bound around a batch size of four.
-
-| Batch size | Prefill |
+| Prompt length | Prefill |
 | ---: | ---: |
-| 1 | 29.15 tok/s |
-| 2 | 54.13 tok/s |
-| 4 | 81.90 tok/s |
-| 8 | 83.66 tok/s |
-| 16 | 85.18 tok/s |
-| 32 | 85.70 tok/s |
-| 64 | 86.10 tok/s |
-| 128 | 86.27 tok/s |
-| 256 | 86.14 tok/s |
-| 512 | 85.73 tok/s |
+| 128 | 118.40 tok/s |
+| 512 | 115.32 tok/s |
+| 1,024 | 113.12 tok/s |
+| 4,096 | 104.32 tok/s |
