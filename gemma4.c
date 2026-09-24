@@ -22,7 +22,7 @@
 #define SLIDING_WINDOW 512
 #define SLIDING_CACHE_SIZE (2 * SLIDING_WINDOW)
 #ifndef BATCH_SIZE
-#define BATCH_SIZE 64
+#define BATCH_SIZE 128
 #endif
 
 // ----------------------------------------------------------------------------
@@ -169,7 +169,7 @@ typedef struct {
 } Model;
 
 // Verifies that the compiler laid out the memory-mapped model exactly as the exporter expects.
-_Static_assert(sizeof(int) == 4 && sizeof(float) == 4 && sizeof(void *) == 8 && sizeof(VocabEntry) == 100 && offsetof(VocabEntry, id) == 96 && sizeof(LookupEntry) == 16 && sizeof(Tokenizer) == 33429932 && sizeof(Tensor) == 32 && sizeof(ModelWeights) == 21472 && sizeof(Model) == 33451408 && offsetof(Model, weights) == 33429936 && BATCH_SIZE > 0 && BATCH_SIZE <= SLIDING_WINDOW && !(SLIDING_CACHE_SIZE & (SLIDING_CACHE_SIZE - 1)) && !(MAX_CONTEXT & (MAX_CONTEXT - 1)), "MOF ABI mismatch");
+_Static_assert(sizeof(int) == 4 && sizeof(float) == 4 && sizeof(void *) == 8 && sizeof(VocabEntry) == 100 && offsetof(VocabEntry, id) == 96 && sizeof(LookupEntry) == 16 && sizeof(Tokenizer) == 33429932 && sizeof(Tensor) == 32 && sizeof(ModelWeights) == 21472 && sizeof(Model) == 33451408 && offsetof(Model, weights) == 33429936 && BATCH_SIZE > 0 && BATCH_SIZE <= SLIDING_WINDOW && !(SLIDING_CACHE_SIZE & (SLIDING_CACHE_SIZE - 1)) && !(MAX_CONTEXT & (MAX_CONTEXT - 1)), "model ABI mismatch");
 
 Model *load_model(const char *path, size_t *size) {
     int fd = open(path, O_RDONLY);
@@ -179,7 +179,7 @@ Model *load_model(const char *path, size_t *size) {
     Model *model = mmap(NULL, *size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     close(fd);
     if (model == MAP_FAILED) { perror("mmap"); exit(1); }
-    if (memcmp(model->magic, "MOF", 4)) { fprintf(stderr, "bad model file\n"); exit(1); }
+    if (memcmp(model->magic, "MOP", 4)) { fprintf(stderr, "bad model file\n"); exit(1); }
     Tensor *tensors = (Tensor *)&model->weights;
     for (size_t i = 0; i < sizeof(model->weights) / sizeof(*tensors); i++) {
         tensors[i].data = tensors[i].data ? (void *)((uint8_t *)model + (uintptr_t)tensors[i].data) : NULL;
@@ -212,38 +212,9 @@ static inline int thread_count(void) {
     return getenv("OMP_NUM_THREADS") ? omp_get_max_threads() : logical_cpus / (threads_per_core ? threads_per_core : 1);
 }
 
-#define ROW_TILE 2
-#if defined(__AVX512VNNI__)
-static inline void dot_i8_tokens(const int8_t *input, size_t stride, const int8_t *weights, size_t token_count, int32_t dots[ROW_TILE]) {
-    __m512i sums[ROW_TILE] = {0};
-    for (int k = 0; k < 64; k += 32) {
-        __m512i w = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(weights + k)));
-        for (size_t token = 0; token < token_count; token++) {
-            __m512i x = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i *)(input + token * stride + k)));
-            sums[token] = _mm512_dpwssd_epi32(sums[token], x, w);
-        }
-    }
-    for (size_t token = 0; token < token_count; token++) dots[token] = _mm512_reduce_add_epi32(sums[token]);
-}
-#else
-static inline void dot_i8_tokens(const int8_t *input, size_t stride, const int8_t *weights, size_t token_count, int32_t dots[ROW_TILE]) {
-    __m256i sums[ROW_TILE] = {0};
-    for (int k = 0; k < 64; k += 16) {
-        __m256i w = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(weights + k)));
-        for (size_t token = 0; token < token_count; token++) {
-            __m256i x = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)(input + token * stride + k)));
-            sums[token] = _mm256_add_epi32(sums[token], _mm256_madd_epi16(x, w));
-        }
-    }
-    for (size_t token = 0; token < token_count; token++) {
-        __m128i total = _mm_add_epi32(_mm256_castsi256_si128(sums[token]), _mm256_extracti128_si256(sums[token], 1));
-        total = _mm_hadd_epi32(total, total);
-        dots[token] = _mm_cvtsi128_si32(_mm_hadd_epi32(total, total));
-    }
-}
-#endif
+#define ROW_TILE 8
 
-// Computes each 64-value dot product in int32, then applies the input and weight scales.
+// Computes 16 neighboring outputs together from weights packed in 16-row blocks.
 void matmul_int8(float *result, const int8_t *input, const float *input_scales,
                  const Tensor *weight, size_t token_count) {
     size_t outputs = (size_t)weight->shape[0];
@@ -251,24 +222,55 @@ void matmul_int8(float *result, const int8_t *input, const float *input_scales,
     size_t groups = inputs / 64;
     const int8_t *weights = (const int8_t *)weight->data;
     #pragma omp for schedule(static)
-    for (size_t output_block = 0; output_block < outputs; output_block += 16) {
+    for (size_t block = 0; block < outputs / 16; block++) {
+        const int8_t *block_weights = weights + block * 16 * inputs;
         for (size_t token_start = 0; token_start < token_count; token_start += ROW_TILE) {
             size_t active_tokens = token_count - token_start < ROW_TILE ? token_count - token_start : ROW_TILE;
-            float sums[ROW_TILE][16] = {0};
+#if defined(__AVX512VNNI__)
+            __m512 sums[ROW_TILE] = {0};
             for (size_t group = 0; group < groups; group++) {
-                size_t offset = group * 64;
-                for (size_t lane = 0; lane < 16; lane++) {
-                    size_t weight_row = output_block + lane;
-                    int32_t dots[ROW_TILE];
-                    dot_i8_tokens(input + token_start * inputs + offset, inputs, weights + weight_row * inputs + offset, active_tokens, dots);
-                    float weight_scale = weight->scales[weight_row * groups + group];
-                    for (size_t token = 0; token < active_tokens; token++)
-                        sums[token][lane] += (float)dots[token] * input_scales[(token_start + token) * groups + group] * weight_scale;
+                __m512i dots[ROW_TILE] = {0}, correction = _mm512_setzero_si512();
+                __m512i sign_bit = _mm512_set1_epi8(-128);
+                for (int chunk = 0; chunk < 16; chunk++) {
+                    __m512i w = _mm512_loadu_si512(block_weights + group * 1024 + chunk * 64);
+                    correction = _mm512_dpbusd_epi32(correction, sign_bit, w);
+                    for (size_t token = 0; token < active_tokens; token++) {
+                        __m512i x = _mm512_broadcastd_epi32(_mm_loadu_si32(input + (token_start + token) * inputs + group * 64 + chunk * 4));
+                        dots[token] = _mm512_dpbusd_epi32(dots[token], _mm512_xor_si512(x, sign_bit), w);
+                    }
+                }
+                __m512 weight_scales = _mm512_loadu_ps(weight->scales + (block * groups + group) * 16);
+                for (size_t token = 0; token < active_tokens; token++) {
+                    __m512 scale = _mm512_mul_ps(weight_scales, _mm512_set1_ps(input_scales[(token_start + token) * groups + group]));
+                    sums[token] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(_mm512_sub_epi32(dots[token], correction)), scale, sums[token]);
                 }
             }
             for (size_t token = 0; token < active_tokens; token++)
-                for (size_t lane = 0; lane < 16; lane++)
-                    result[(token_start + token) * outputs + output_block + lane] = sums[token][lane];
+                _mm512_storeu_ps(result + (token_start + token) * outputs + block * 16, sums[token]);
+#else
+            for (int half = 0; half < 2; half++) {
+                __m256 sums[ROW_TILE] = {0};
+                for (size_t group = 0; group < groups; group++) {
+                    __m256i dots[ROW_TILE] = {0};
+                    for (int chunk = 0; chunk < 16; chunk++) {
+                        __m256i w = _mm256_loadu_si256((const __m256i *)(block_weights + group * 1024 + chunk * 64 + half * 32));
+                        __m256i magnitude = _mm256_abs_epi8(w);
+                        for (size_t token = 0; token < active_tokens; token++) {
+                            __m256i x = _mm256_broadcastd_epi32(_mm_loadu_si32(input + (token_start + token) * inputs + group * 64 + chunk * 4));
+                            __m256i products = _mm256_maddubs_epi16(magnitude, _mm256_sign_epi8(x, w));
+                            dots[token] = _mm256_add_epi32(dots[token], _mm256_madd_epi16(products, _mm256_set1_epi16(1)));
+                        }
+                    }
+                    __m256 weight_scales = _mm256_loadu_ps(weight->scales + (block * groups + group) * 16 + half * 8);
+                    for (size_t token = 0; token < active_tokens; token++) {
+                        __m256 scale = _mm256_mul_ps(weight_scales, _mm256_set1_ps(input_scales[(token_start + token) * groups + group]));
+                        sums[token] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(dots[token]), scale, sums[token]);
+                    }
+                }
+                for (size_t token = 0; token < active_tokens; token++)
+                    _mm256_storeu_ps(result + (token_start + token) * outputs + block * 16 + half * 8, sums[token]);
+            }
+#endif
         }
     }
 }
@@ -336,13 +338,14 @@ void embedding(float *output, const Tensor *table, const int *tokens, size_t tok
     int groups = width / 64;
     #pragma omp for schedule(static)
     for (size_t token = 0; token < token_count; token++) {
+        size_t block = (size_t)tokens[token] / 16;
+        int row = tokens[token] % 16;
         float *vector = output + token * width;
-        const int8_t *row = (const int8_t *)table->data + (size_t)tokens[token] * width;
-        const float *scales = table->scales + (size_t)tokens[token] * groups;
         for (size_t group = 0; group < (size_t)groups; group++) {
-            float scale = scales[group] * multiplier;
+            const int8_t *packed = (const int8_t *)table->data + block * 16 * width + group * 1024;
+            float scale = table->scales[(block * groups + group) * 16 + row] * multiplier;
             for (int j = 0; j < 64; j++)
-                vector[group * 64 + j] = (float)row[group * 64 + j] * scale;
+                vector[group * 64 + j] = (float)packed[(j / 4) * 64 + row * 4 + j % 4] * scale;
         }
     }
 }

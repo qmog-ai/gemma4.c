@@ -26,10 +26,10 @@ python3 validation.py
 
 | Metric | Result |
 | --- | ---: |
-| Mean KL divergence | 0.004707 |
-| Top-1 agreement | 96.2% (2297/2388) |
-| Mean absolute error | 0.156529 |
-| Mean cosine similarity | 0.998921 |
+| Mean KL divergence | 0.004704 |
+| Top-1 agreement | 96.2% (2298/2388) |
+| Mean absolute error | 0.158330 |
+| Mean cosine similarity | 0.998916 |
 
 ## Performance
 
@@ -51,7 +51,7 @@ Each throughput result is the median of three runs after one discarded warmup.
 
 | Length | Decode (tg 128) | Prefill |
 | ---: | ---: | ---: |
-| 512 | 24.36 tok/s | 117.01 tok/s |
-| 1,024 | 24.01 tok/s | 114.17 tok/s |
-| 2,048 | 23.32 tok/s | 110.75 tok/s |
-| 4,096 | 22.03 tok/s | 104.70 tok/s |
+| 512 | 24.46 tok/s | 617.66 tok/s |
+| 2,048 | 23.42 tok/s | 484.55 tok/s |
+| 8,192 | 19.88 tok/s | 248.02 tok/s |
+| 16,384 | 16.46 tok/s | 105.48 tok/s |
