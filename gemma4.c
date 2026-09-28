@@ -555,14 +555,15 @@ int prefill(Model *model, InferenceState *state, const int *tokens, int token_co
 }
 
 void generate(Model *model, InferenceState *state, const char *prompt,
-              int max_new_tokens, float temperature, int dump_logits) {
+              int max_new_tokens, float temperature, int dump_logits, int dump_last_logits) {
     Tokenizer *tokenizer = &model->tokenizer;
     if (max_new_tokens < 0) {
         fprintf(stderr, "-n must be non-negative\n");
         exit(1);
     }
-    const char *segments[3] = {dump_logits ? "" : "<|turn>user\n", prompt,
-                               dump_logits ? "" : "<turn|>\n<|turn>model\n"};
+    int raw_prompt = dump_logits || dump_last_logits;
+    const char *segments[3] = {raw_prompt ? "" : "<|turn>user\n", prompt,
+                               raw_prompt ? "" : "<turn|>\n<|turn>model\n"};
     int prompt_tokens = tokenize(tokenizer, segments, state->token_ids, MAX_CONTEXT);
     if (prompt_tokens < 0) {
         fprintf(stderr, "prompt exceeds the %d-token context limit\n", MAX_CONTEXT);
@@ -571,6 +572,10 @@ void generate(Model *model, InferenceState *state, const char *prompt,
 
     int last_prompt_row = prefill(model, state, state->token_ids, prompt_tokens, 0, dump_logits);
     if (dump_logits) return;
+    if (dump_last_logits) {
+        fwrite(logits(model, state, (size_t)last_prompt_row), sizeof(float), VOCAB_SIZE, stdout);
+        return;
+    }
     int available = MAX_CONTEXT - prompt_tokens;
     int end = prompt_tokens + (max_new_tokens < available ? max_new_tokens : available);
     for (int position = prompt_tokens; position < end; position++) {
@@ -592,11 +597,13 @@ int main(int argc, char **argv) {
     float temperature = 1.0f;
     int max_new_tokens = 1024;
     int dump_logits = 0;
+    int dump_last_logits = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-m") && i + 1 < argc) model_path = argv[++i];
         else if (!strcmp(argv[i], "-t") && i + 1 < argc) temperature = atof(argv[++i]);
         else if (!strcmp(argv[i], "-n") && i + 1 < argc) max_new_tokens = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--dump-logits")) dump_logits = 1;
+        else if (!strcmp(argv[i], "--dump-last-logits")) dump_last_logits = 1;
         else prompt = argv[i];
     }
 
@@ -605,7 +612,7 @@ int main(int argc, char **argv) {
 
     InferenceState *state = calloc(1, sizeof(*state));
     rng_state ^= (uint64_t)time(NULL);
-    generate(model, state, prompt, max_new_tokens, temperature, dump_logits);
+    generate(model, state, prompt, max_new_tokens, temperature, dump_logits, dump_last_logits);
     free(state);
     munmap(model, model_size);
     return 0;
