@@ -25,35 +25,35 @@ make
 - `-m PATH` sets the model path. The default is `gemma4-E2B-int8.bin`.
 - `-t TEMPERATURE` sets the temperature. The default is `1.0`. Use `0` for greedy decoding.
 - `-n TOKENS` sets the maximum number of tokens to generate. The default is `1,024`.
-- `--dump-logits` writes the prompt logits to stdout as float32 binary data.
+- `--thinking` enables the model's thinking chat template.
 
-## Numerical validation
+## Correctness
 
-```sh
-python3 validation.py 64
-```
+The C tokenizer matches the official Hugging Face tokenizer across raw text, chat templates, thinking templates, Unicode, byte fallback, and special tokens.
+
+### Numerical validation
+
+All 2,388 positions are compared against the unquantized QAT checkpoint over the complete 262,144-token vocabulary.
 
 | Metric | Result |
 | --- | ---: |
-| Mean KL divergence | 0.002274 |
-| Top-1 agreement | 95.3% (61/64) |
-| Mean absolute error | 0.117840 |
-| Mean cosine similarity | 0.999509 |
+| Mean absolute error | 0.127127 |
+| Maximum absolute error | 8.203652 |
+| Mean cosine similarity | 0.999307 |
+| Top-1 agreement | 97.0% (2,317/2,388) |
+| Mean KL divergence | 0.003484 |
+
+### Evaluation
+
+| Runtime | tinyMMLU |
+| --- | ---: |
+| Hugging Face Gemma 4 E2B IT | 60/100 |
+| Hugging Face unquantized QAT checkpoint | 56/100 |
+| gemma4.c | 56/100 |
+
+Commands for reproducing the tokenizer, numerical validation, and evaluation results are in [tests](tests/README.md).
 
 ## Performance
-
-```sh
-make benchmark
-./benchmark -m MODEL --pp 64,256,512 -r 3
-./benchmark -m MODEL --tg 128 --d 64,256,512 -r 3
-```
-
-Profile one workload at a time without function inlining:
-
-```sh
-./profile.sh -m MODEL --tg 128 --d 512 -r 1
-perf report --stdio --no-children --percent-limit 0
-```
 
 Benchmarked on an eight-core Ryzen 7 7700 using one thread. Throughput is the mean and sample
 standard deviation of three runs after one discarded warmup. Profiles contain only the measured workload.
@@ -73,3 +73,5 @@ standard deviation of three runs after one discarded warmup. Profiles contain on
 | 64 | 9.84 ± 0.04&nbsp;tok&#8288;/&#8288;s | 47.92% | 49.33% | 1.30% | 0.18% |
 | 256 | 9.44 ± 0.02&nbsp;tok&#8288;/&#8288;s | 46.01% | 47.15% | 4.86% | 0.60% |
 | 512 | 8.95 ± 0.04&nbsp;tok&#8288;/&#8288;s | 43.53% | 44.86% | 9.08% | 1.17% |
+
+Benchmark and profiling commands are in [performance](performance/README.md).

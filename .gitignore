@@ -2,6 +2,7 @@
 /run
 /run.exe
 /benchmark
+/libgemma4.so
 /perf.data*
 /.venv
-/__pycache__/
+__pycache__/

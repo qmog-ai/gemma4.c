@@ -67,12 +67,13 @@ int apply_bpe_merges(const Tokenizer *tokenizer, int *tokens, int count) {
     }
 }
 
-// Converts the three prompt segments from UTF-8 into vocabulary pieces, falls back to byte tokens when needed, applies BPE, and prepends <bos>.
-int tokenize(const Tokenizer *tokenizer, const char *segments[3], int *tokens, int capacity) {
+// Converts text parts from UTF-8 into vocabulary pieces, falls back to byte tokens when needed, applies BPE, and prepends <bos>.
+int tokenize(const Tokenizer *tokenizer, const char **parts, int part_count,
+             int *tokens, int capacity) {
     int count = 1;
 
-    for (int segment = 0; segment < 3; segment++) {
-        for (const char *cursor = segments[segment]; *cursor;) {
+    for (int part = 0; part < part_count; part++) {
+        for (const char *cursor = parts[part]; *cursor;) {
             if (count >= capacity) return -1;
             int special = -1;
             if (*cursor == '<') {
@@ -201,6 +202,18 @@ Model *load_model(const char *path, size_t *size) {
         tensors[i].scales = tensors[i].scales ? (float *)((uint8_t *)model + (uintptr_t)tensors[i].scales) : NULL;
     }
     return model;
+}
+
+void free_model(Model *model, size_t size) {
+    munmap(model, size);
+}
+
+InferenceState *create_state(void) {
+    return calloc(1, sizeof(InferenceState));
+}
+
+void free_state(InferenceState *state) {
+    free(state);
 }
 
 // ----------------------------------------------------------------------------
@@ -514,39 +527,50 @@ int sample(const float *scores, float temperature) {
     return top[count - 1].token;
 }
 
-int prefill(Model *model, InferenceState *state, const int *tokens, int token_count, int start_pos, int dump_logits) {
+int prefill(Model *model, InferenceState *state, const int *tokens, int token_count, int start_pos) {
     for (int position = 0; position < token_count; position++) {
         forward(model, state, tokens + position, 1, start_pos + position);
-        if (dump_logits)
-            fwrite(logits(model, state, 0), sizeof(float), VOCAB_SIZE, stdout);
     }
     return token_count ? (token_count - 1) % BATCH_SIZE : 0;
 }
 
+int tokenize_prompt(const Model *model, const char *prompt, int thinking,
+                    int raw_prompt, int *tokens, int capacity) {
+    const Tokenizer *tokenizer = &model->tokenizer;
+    const char *parts[4];
+    int part_count = 0;
+    if (!raw_prompt) {
+        if (thinking) parts[part_count++] = "<|turn>system\n<|think|>\n<turn|>\n";
+        parts[part_count++] = "<|turn>user\n";
+    }
+    parts[part_count++] = prompt;
+    if (!raw_prompt) parts[part_count++] = "<turn|>\n<|turn>model\n";
+    return tokenize(tokenizer, parts, part_count, tokens, capacity);
+}
+
 void generate(Model *model, InferenceState *state, const char *prompt,
-              int max_new_tokens, float temperature, int dump_logits) {
+              int max_new_tokens, float temperature, int thinking) {
     Tokenizer *tokenizer = &model->tokenizer;
     if (max_new_tokens < 0) {
         fprintf(stderr, "-n must be non-negative\n");
         exit(1);
     }
-    const char *segments[3] = {dump_logits ? "" : "<|turn>user\n", prompt,
-                               dump_logits ? "" : "<turn|>\n<|turn>model\n"};
-    int prompt_tokens = tokenize(tokenizer, segments, state->token_ids, MAX_CONTEXT);
+    int prompt_tokens = tokenize_prompt(model, prompt, thinking, 0,
+                                        state->token_ids, MAX_CONTEXT);
     if (prompt_tokens < 0) {
         fprintf(stderr, "prompt exceeds the %d-token context limit\n", MAX_CONTEXT);
         exit(1);
     }
 
-    prefill(model, state, state->token_ids, prompt_tokens, 0, dump_logits);
-    if (dump_logits) return;
+    prefill(model, state, state->token_ids, prompt_tokens, 0);
     int available = MAX_CONTEXT - prompt_tokens;
     int end = prompt_tokens + (max_new_tokens < available ? max_new_tokens : available);
     for (int position = prompt_tokens; position < end; position++) {
         int next_token = sample(logits(model, state, 0), temperature);
         if (next_token == 1 || next_token == 106) break;
 
-        fputs(token_text(tokenizer, next_token), stdout);
+        if (next_token == 101) fputs("\n\n", stdout); // Separate the thought channel from the final answer.
+        else fputs(token_text(tokenizer, next_token), stdout);
         fflush(stdout);
         forward(model, state, &next_token, 1, position);
     }
@@ -559,23 +583,23 @@ int main(int argc, char **argv) {
     const char *prompt = "Why is the sky blue?";
     float temperature = 1.0f;
     int max_new_tokens = 1024;
-    int dump_logits = 0;
+    int thinking = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-m") && i + 1 < argc) model_path = argv[++i];
         else if (!strcmp(argv[i], "-t") && i + 1 < argc) temperature = atof(argv[++i]);
         else if (!strcmp(argv[i], "-n") && i + 1 < argc) max_new_tokens = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--dump-logits")) dump_logits = 1;
+        else if (!strcmp(argv[i], "--thinking")) thinking = 1;
         else prompt = argv[i];
     }
 
     size_t model_size;
     Model *model = load_model(model_path, &model_size);
 
-    InferenceState *state = calloc(1, sizeof(*state));
+    InferenceState *state = create_state();
     rng_state ^= (uint64_t)time(NULL);
-    generate(model, state, prompt, max_new_tokens, temperature, dump_logits);
-    free(state);
-    munmap(model, model_size);
+    generate(model, state, prompt, max_new_tokens, temperature, thinking);
+    free_state(state);
+    free_model(model, model_size);
     return 0;
 }
 #endif

@@ -1,19 +1,7 @@
-/*
-Benchmarks prompt processing (pp) or token generation (tg) without
-tokenization or sampling. Each workload is warmed up once, then repeated.
-
-  make benchmark
-  ./benchmark -m gemma4-E2B-int8.bin --pp 64,256,512 -r 3
-  ./benchmark -m gemma4-E2B-int8.bin --tg 128 --d 64,256,512 -r 3
-
-Build with function inlining disabled for profiling:
-
-  ./profile.sh -m gemma4-E2B-int8.bin --tg 128 --d 512 -r 1
-  perf report
-*/
+// Benchmarks prompt processing or token generation without tokenization or sampling.
 
 #define GEMMA4_NO_MAIN
-#include "gemma4.c"
+#include "../gemma4.c"
 
 #include <errno.h>
 #include <limits.h>
@@ -37,7 +25,7 @@ static int parse_list(const char *text, int *values) {
 
 static void workload(Model *model, InferenceState *state, int pp, int tg, int depth) {
     if (pp) {
-        int last_row = prefill(model, state, state->token_ids + depth, pp, depth, 0);
+        int last_row = prefill(model, state, state->token_ids + depth, pp, depth);
         (void)logits(model, state, last_row);
     }
 
@@ -110,7 +98,7 @@ int main(int argc, char **argv) {
 
         InferenceState *state = calloc(1, sizeof(*state));
         for (int token = 0; token < depth + pp; token++) state->token_ids[token] = 2 + token % 1000;
-        prefill(model, state, state->token_ids, depth, 0, 0);
+        prefill(model, state, state->token_ids, depth, 0);
 
         // Full-cache prefixes are never overwritten, so only the sliding ring must be restored between runs.
         void *saved_sliding = malloc(sizeof(state->sliding_cache));
