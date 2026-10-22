@@ -165,6 +165,16 @@ typedef struct {
 } ModelWeights;
 
 typedef struct {
+    int8_t data[2 * SLIDING_WINDOW * 256];
+    float scales[2 * SLIDING_WINDOW * 256 / GROUP_SIZE];
+} SlidingCache;
+
+typedef struct {
+    int8_t data[2 * MAX_CONTEXT * 512];
+    float scales[2 * MAX_CONTEXT * 512 / GROUP_SIZE];
+} FullCache;
+
+typedef struct {
     float residual[BATCH_SIZE * HIDDEN_SIZE];                           // Carries each token's hidden state through all 35 layers.
     float hidden[BATCH_SIZE * 8 * HIDDEN_SIZE];                         // Reused for intermediate results and sized for the largest 12,288-value MLP output.
     float auxiliary[BATCH_SIZE * 8 * HIDDEN_SIZE];                      // Holds a second intermediate when attention or the MLP needs two results at once.
@@ -172,8 +182,8 @@ typedef struct {
     float activation_scales[BATCH_SIZE * 8 * HIDDEN_SIZE / GROUP_SIZE]; // Stores one float scale for each quantization group.
     float per_layer_inputs[BATCH_SIZE * NUM_LAYERS * 256];              // Stores one 256-value conditioning vector for every token and layer.
     float logits[VOCAB_SIZE];                                           // Holds the final vocabulary projection used for sampling.
-    float sliding_cache[3][4][2 * SLIDING_WINDOW * 256];                // Keeps keys and values for the previous 512 positions in twelve sliding caches.
-    float full_cache[3][2 * MAX_CONTEXT * 512];                         // Holds the complete context for three 512-wide full-attention KV caches.
+    SlidingCache sliding_cache[3][4];                                   // Keeps quantized keys and values for the previous 512 positions in twelve sliding caches.
+    FullCache full_cache[3];                                            // Holds quantized keys and values for three 512-wide full-attention caches.
     int token_ids[MAX_CONTEXT];                                         // Holds the tokenized prompt before prefill.
 } InferenceState;
 
@@ -209,12 +219,6 @@ Model *load_model(const char *path, size_t *size) {
 static inline int32_t dot_i8(const int8_t *input, const int8_t *weights) {
     int32_t sum = 0;
     for (int k = 0; k < GROUP_SIZE; k++) sum += (int32_t)input[k] * (int32_t)weights[k];
-    return sum;
-}
-
-static inline float dot_f32(const float *a, const float *b, int n) {
-    float sum = 0.0f;
-    for (int i = 0; i < n; i++) sum += a[i] * b[i];
     return sum;
 }
 
@@ -258,12 +262,19 @@ void quantize(int8_t *quantized, float *scales, const float *input, size_t rows,
     }
 }
 
-void weighted_sum(float *output, const float *probabilities, const float *value_cache, int first_key, int key_count, int cache_mask, int head_dim) {
+void weighted_sum(float *output, const float *probabilities, const int8_t *value_cache, const float *value_scale_cache,
+                  int first_key, int key_count, int cache_mask, int head_dim) {
     for (int j = 0; j < head_dim; j++) output[j] = 0.0f;
-    for (int key_offset = 0; key_offset < key_count; key_offset++) {
-        const float *value = value_cache + ((first_key + key_offset) & cache_mask) * head_dim;
-        float probability = probabilities[key_offset];
-        for (int j = 0; j < head_dim; j++) output[j] += probability * value[j];
+    int groups = head_dim / GROUP_SIZE;
+    for (int i = 0; i < key_count; i++) {
+        int position = (first_key + i) & cache_mask;
+        const int8_t *value = value_cache + position * head_dim;
+        const float *value_scales = value_scale_cache + position * groups;
+        for (int group = 0; group < groups; group++) {
+            int offset = group * GROUP_SIZE;
+            float scale = probabilities[i] * value_scales[group];
+            for (int j = 0; j < GROUP_SIZE; j++) output[offset + j] += scale * value[offset + j];
+        }
     }
 }
 
@@ -365,10 +376,22 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
     int cache_mask = cache_size - 1; // Both cache lengths are powers of two, so masking wraps positions without division.
     int head_dim = weights->q_norm.shape[0];
     int query_width = weights->q_proj.shape[0];
+    int groups = head_dim / GROUP_SIZE;
     int cache_layer = layer;
     while (!layers[cache_layer].k_proj.data || (cache_layer % 5 == 4) != is_full_attention) cache_layer--; // Shared layers reuse the latest cache of the same attention type.
-    float *key_cache = is_full_attention ? state->full_cache[cache_layer / 5] : state->sliding_cache[cache_layer / 5][cache_layer % 5];
-    float *value_cache = key_cache + (size_t)cache_size * head_dim;
+    int8_t *cache;
+    float *cache_scales;
+    if (is_full_attention) {
+        cache = state->full_cache[cache_layer / 5].data;
+        cache_scales = state->full_cache[cache_layer / 5].scales;
+    } else {
+        cache = state->sliding_cache[cache_layer / 5][cache_layer % 5].data;
+        cache_scales = state->sliding_cache[cache_layer / 5][cache_layer % 5].scales;
+    }
+    int8_t *key_cache = cache;
+    int8_t *value_cache = key_cache + (size_t)cache_size * head_dim;
+    float *key_scale_cache = cache_scales;
+    float *value_scale_cache = key_scale_cache + (size_t)cache_size * groups;
 
     // Build the queries for every token in the batch.
     quantize(state->quantized, state->activation_scales, state->hidden, token_count, weights->q_proj.shape[1]);
@@ -379,31 +402,44 @@ void attention(InferenceState *state, const LayerWeights *layers, int layer,
     // Compute keys and values and write them to the cache. Only the first 15 layers
     // have these weights, every other layer reads a cache an earlier layer filled.
     if (weights->k_proj.data) {
-        float *new_keys = key_cache + ((size_t)start_pos & cache_mask) * head_dim;
-        float *new_values = value_cache + ((size_t)start_pos & cache_mask) * head_dim;
+        float *new_keys = state->hidden;
+        float *new_values = new_keys + token_count * head_dim;
         matmul_int8(new_keys, state->quantized, state->activation_scales, &weights->k_proj, token_count);
         matmul_int8(new_values, state->quantized, state->activation_scales, &weights->v_proj, token_count);
         rmsnorm(new_keys, new_keys, &weights->k_norm, head_dim, 1e-6f, token_count);
         // Value vectors are normalized without a learned weight.
         rmsnorm(new_values, new_values, NULL, head_dim, 1e-6f, token_count);
         apply_rope(&weights->rope_cos, &weights->rope_sin, new_keys, 1, head_dim, start_pos, token_count);
+        int position = start_pos & cache_mask;
+        quantize(key_cache + position * head_dim, key_scale_cache + position * groups, new_keys, token_count, head_dim);
+        quantize(value_cache + position * head_dim, value_scale_cache + position * groups, new_values, token_count, head_dim);
     }
+
+    int query_heads = query_width / head_dim;
+    quantize(state->quantized, state->activation_scales, state->auxiliary, token_count * query_heads, head_dim);
 
     // Each head scores its query against the visible keys and averages their values.
     // Sliding-window layers see the last 512 keys, full-attention layers see everything.
-    for (size_t head = 0; head < (size_t)(query_width / head_dim); head++) {
+    for (size_t head = 0; head < (size_t)query_heads; head++) {
         for (size_t token = 0; token < token_count; token++) {
             int first_key = !is_full_attention && start_pos + (int)token + 1 > SLIDING_WINDOW ? start_pos + (int)token + 1 - SLIDING_WINDOW : 0;
             int key_count = start_pos + (int)token + 1 - first_key;
             float *head_output = state->hidden + token * query_width + head * head_dim;
-            const float *query = state->auxiliary + token * query_width + head * head_dim;
+            const int8_t *query = state->quantized + token * query_width + head * head_dim;
+            const float *query_scales = state->activation_scales + (token * query_heads + head) * groups;
             for (int i = 0; i < key_count; i++) {
                 int position = (first_key + i) & cache_mask;
-                const float *key = key_cache + position * head_dim;
-                scores[i] = dot_f32(query, key, head_dim);
+                const int8_t *key = key_cache + position * head_dim;
+                const float *key_scales = key_scale_cache + position * groups;
+                float score = 0.0f;
+                for (int group = 0; group < groups; group++) {
+                    int offset = group * GROUP_SIZE;
+                    score += (float)dot_i8(query + offset, key + offset) * query_scales[group] * key_scales[group];
+                }
+                scores[i] = score;
             }
             softmax(scores, key_count);
-            weighted_sum(head_output, scores, value_cache, first_key, key_count, cache_mask, head_dim);
+            weighted_sum(head_output, scores, value_cache, value_scale_cache, first_key, key_count, cache_mask, head_dim);
         }
     }
 
