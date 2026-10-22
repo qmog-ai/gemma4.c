@@ -1,0 +1,320 @@
+
+[gemma context=512]
+pp512 602.20 tok/s
+tg128@d512 25.11 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=512 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","512","0","0","2026-09-02T19:57:44Z","1865494577","0","274.458048","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=512 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","512","2026-09-02T19:57:46Z","5649739101","0","22.655913","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=512 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","512","0","0","2026-09-02T19:57:55Z","1853814257","0","276.187325","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=512 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","512","2026-09-02T19:57:57Z","5639679899","0","22.696324","0.000000"
+
+[gemma context=512]
+pp512 633.13 tok/s
+tg128@d512 25.15 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=512 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","512","0","0","2026-09-02T19:58:11Z","1874185376","0","273.185356","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=512 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","512","2026-09-02T19:58:13Z","5646398393","0","22.669318","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=512 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","512","0","0","2026-09-02T19:58:21Z","1880380721","0","272.285285","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=512 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","512","2026-09-02T19:58:24Z","5647466391","0","22.665031","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=512 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","512","0","0","2026-09-02T19:58:32Z","1848925313","0","276.917621","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=512 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","512","2026-09-02T19:58:34Z","5637544252","0","22.704922","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=512 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","512","0","0","2026-09-02T19:58:42Z","1849803538","0","276.786150","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=512 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","512","2026-09-02T19:58:45Z","5647816358","0","22.663626","0.000000"
+
+[gemma context=512]
+pp512 629.36 tok/s
+tg128@d512 25.16 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=512 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","512","0","0","2026-09-02T19:58:59Z","1903451785","0","268.985011","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=512 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","512","2026-09-02T19:59:01Z","5643686397","0","22.680211","0.000000"
+
+[gemma context=512]
+pp512 629.71 tok/s
+tg128@d512 25.16 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=512 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","512","0","0","2026-09-02T19:59:15Z","1865285615","0","274.488795","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=512 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","512","2026-09-02T19:59:17Z","5645574439","0","22.672626","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=2048 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","2048","0","0","2026-09-02T19:59:26Z","7903523706","0","259.124927","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=2048 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","2048","2026-09-02T19:59:34Z","6002842178","0","21.323233","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=2048 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","2048","0","0","2026-09-02T19:59:48Z","7989702740","0","256.329937","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=2048 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","2048","2026-09-02T19:59:57Z","6015587266","0","21.278056","0.000000"
+
+[gemma context=2048]
+pp2048 483.14 tok/s
+tg128@d2048 24.05 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=2048 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","2048","0","0","2026-09-02T20:00:21Z","7899807723","0","259.246816","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=2048 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","2048","2026-09-02T20:00:30Z","6015053747","0","21.279943","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=2048 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","2048","0","0","2026-09-02T20:00:44Z","7940785903","0","257.908981","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=2048 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","2048","2026-09-02T20:00:53Z","6011663159","0","21.291945","0.000000"
+
+[gemma context=2048]
+pp2048 494.64 tok/s
+tg128@d2048 24.06 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=2048 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","2048","0","0","2026-09-02T20:01:17Z","7919677882","0","258.596376","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=2048 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","2048","2026-09-02T20:01:25Z","6020856246","0","21.259435","0.000000"
+
+[gemma context=2048]
+pp2048 493.29 tok/s
+tg128@d2048 24.04 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=2048 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","2048","0","0","2026-09-02T20:01:49Z","7951084269","0","257.574933","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=2048 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","2048","2026-09-02T20:01:58Z","5997466612","0","21.342345","0.000000"
+
+[gemma context=2048]
+pp2048 494.49 tok/s
+tg128@d2048 24.01 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=2048 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","2048","0","0","2026-09-02T20:02:22Z","7904054856","0","259.107513","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=2048 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","2048","2026-09-02T20:02:30Z","6001998624","0","21.326229","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=2048 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","2048","0","0","2026-09-02T20:02:45Z","7902144712","0","259.170146","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=2048 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","2048","2026-09-02T20:02:53Z","6015484944","0","21.278417","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=8192 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","8192","0","0","2026-09-02T20:03:08Z","36663388659","0","223.438157","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=8192 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","8192","2026-09-02T20:03:45Z","7184741757","0","17.815532","0.000000"
+
+[gemma context=8192]
+pp8192 253.20 tok/s
+tg128@d8192 20.28 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=8192 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","8192","0","0","2026-09-02T20:05:08Z","36553008411","0","224.112880","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=8192 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","8192","2026-09-02T20:05:45Z","7161329726","0","17.873776","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=8192 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","8192","0","0","2026-09-02T20:06:33Z","36520723770","0","224.310998","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=8192 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","8192","2026-09-02T20:07:10Z","7188604817","0","17.805959","0.000000"
+
+[gemma context=8192]
+pp8192 253.75 tok/s
+tg128@d8192 20.34 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=8192 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","8192","0","0","2026-09-02T20:08:33Z","36532090914","0","224.241203","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=8192 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","8192","2026-09-02T20:09:10Z","7176424034","0","17.836181","0.000000"
+
+[gemma context=8192]
+pp8192 254.01 tok/s
+tg128@d8192 20.35 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=8192 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","8192","0","0","2026-09-02T20:10:33Z","36615852668","0","223.728233","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=8192 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","8192","2026-09-02T20:11:10Z","7159402203","0","17.878588","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=8192 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","8192","0","0","2026-09-02T20:11:55Z","36495563676","0","224.465638","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=8192 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","8192","2026-09-02T20:12:32Z","7184310779","0","17.816601","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=8192 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","8192","0","0","2026-09-02T20:13:17Z","36805804682","0","222.573588","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=8192 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","8192","2026-09-02T20:13:54Z","7183699359","0","17.818118","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=8192 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","8192","0","0","2026-09-02T20:14:39Z","36702821820","0","223.198097","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=8192 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","8192","2026-09-02T20:15:16Z","7176876052","0","17.835058","0.000000"
+
+[gemma context=8192]
+pp8192 254.30 tok/s
+tg128@d8192 20.35 tok/s
+
+[gemma context=16384]
+pp16384 106.04 tok/s
+tg128@d16384 16.80 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=16384 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","16384","0","0","2026-09-02T20:19:21Z","85770107448","0","191.022263","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=16384 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","16384","2026-09-02T20:20:47Z","8954678320","0","14.294204","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=16384 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","16384","0","0","2026-09-02T20:22:23Z","86277166389","0","189.899607","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=16384 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","16384","2026-09-02T20:23:50Z","8952071812","0","14.298366","0.000000"
+
+[gemma context=16384]
+pp16384 106.29 tok/s
+tg128@d16384 16.80 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=16384 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","16384","0","0","2026-09-02T20:28:08Z","86063526567","0","190.371004","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=16384 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","16384","2026-09-02T20:29:34Z","8955764156","0","14.292471","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=16384 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","16384","0","0","2026-09-02T20:31:10Z","86831621476","0","188.687021","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=16384 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","16384","2026-09-02T20:32:37Z","8962392078","0","14.281901","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=16384 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","16384","0","0","2026-09-02T20:34:13Z","86377766558","0","189.678440","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=16384 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","16384","2026-09-02T20:35:40Z","8969709114","0","14.270251","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=16384 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","16384","0","0","2026-09-02T20:37:16Z","86563139037","0","189.272249","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=16384 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","16384","2026-09-02T20:38:43Z","8968931241","0","14.271489","0.000000"
+
+[gemma context=16384]
+pp16384 106.30 tok/s
+tg128@d16384 16.84 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=16384 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","16384","0","0","2026-09-02T20:43:01Z","87217790966","0","187.851582","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0.gguf context=16384 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","16384","2026-09-02T20:44:29Z","8990393513","0","14.237419","0.000000"
+
+[gemma context=16384]
+pp16384 106.50 tok/s
+tg128@d16384 16.77 tok/s
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=16384 phase=prefill]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","16384","0","0","2026-09-02T20:48:47Z","86179769406","0","190.114224","0.000000"
+
+[llama model=gemma-4-E2B-it-Q8_0-G64-final.gguf context=16384 phase=decode]
+build_commit,build_number,cpu_info,gpu_info,backends,model_filename,model_type,model_size,model_n_params,n_batch,n_ubatch,n_threads,cpu_mask,cpu_strict,poll,type_k,type_v,n_gpu_layers,n_cpu_moe,split_mode,main_gpu,no_kv_offload,flash_attn,devices,tensor_split,tensor_buft_overrides,load_mode,embeddings,no_op_offload,no_host,fit_target,fit_min_ctx,n_prompt,n_gen,n_depth,test_time,avg_ns,stddev_ns,avg_ts,stddev_ts
+"687e778","1","AMD Ryzen 7 7700 8-Core Processor","","CPU","/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf","gemma4 E2B Q8_0","4918696076","4628569635","512","512","8","0x0","0","50","f32","f32","0","0","layer","0","0","-1","auto","0.00","none","mmap","0","0","0","0","0","0","128","16384","2026-09-02T20:50:13Z","8962001246","0","14.282524","0.000000"

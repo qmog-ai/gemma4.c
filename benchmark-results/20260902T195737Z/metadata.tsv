@@ -1,0 +1,15 @@
+started_utc	2026-09-02T19:57:38Z
+host	ryan-pc
+kernel	Linux 7.0.0-30-generic x86_64 GNU/Linux
+cpu	AMD Ryzen 7 7700 8-Core Processor
+gemma_commit	df51e88136d8a52889cb238774972ac89cc73e3f
+llama_commit	687e7789271ec1276e3470f158428e11a4f80b6f
+threads	8
+batch	512
+ubatch	512
+kv_cache	f32
+decode_tokens	128
+repetitions	3
+artifact\t/home/ryan/Projects/gemma4/gemma4.c/gemma4-E2B-int8.bin\t5008891264 bytes
+artifact\t/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0-G64-final.gguf\t4934512736 bytes
+artifact\t/home/ryan/Projects/models/gemma4/gemma-4-E2B-it-Q8_0.gguf\t4934512736 bytes

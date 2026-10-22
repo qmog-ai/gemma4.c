@@ -1,0 +1,58 @@
+diff --git a/tools/llama-bench/llama-bench.cpp b/tools/llama-bench/llama-bench.cpp
+index c17a27b..e6b7285 100644
+--- a/tools/llama-bench/llama-bench.cpp
++++ b/tools/llama-bench/llama-bench.cpp
+@@ -476,6 +476,9 @@ static void print_usage(int /* argc */, char ** argv) {
+ }
+ 
+ static ggml_type ggml_type_from_name(const std::string & s) {
++    if (s == "f32") {
++        return GGML_TYPE_F32;
++    }
+     if (s == "f16") {
+         return GGML_TYPE_F16;
+     }
+@@ -2112,19 +2115,14 @@ struct ctx_state {
+ static bool test_prompt(llama_context * ctx, int n_prompt, int n_batch, int n_threads) {
+     llama_set_n_threads(ctx, n_threads, n_threads);
+ 
+-    const llama_model * model   = llama_get_model(ctx);
+-    const llama_vocab * vocab   = llama_model_get_vocab(model);
+-    const int32_t       n_vocab = llama_vocab_n_tokens(vocab);
+-
+     std::vector<llama_token> tokens(n_batch);
+ 
+     int n_processed = 0;
+ 
+     while (n_processed < n_prompt) {
+         int n_tokens = std::min(n_prompt - n_processed, n_batch);
+-        tokens[0]    = n_processed == 0 && llama_vocab_get_add_bos(vocab) ? llama_vocab_bos(vocab) : std::rand() % n_vocab;
+-        for (int i = 1; i < n_tokens; i++) {
+-            tokens[i] = std::rand() % n_vocab;
++        for (int i = 0; i < n_tokens; i++) {
++            tokens[i] = 2 + (n_processed + i) % 1000;
+         }
+         int res = llama_decode(ctx, llama_batch_get_one(tokens.data(), n_tokens));
+         if (res != 0) {
+@@ -2141,11 +2139,7 @@ static bool test_prompt(llama_context * ctx, int n_prompt, int n_batch, int n_th
+ static bool test_gen(llama_context * ctx, int n_gen, int n_threads) {
+     llama_set_n_threads(ctx, n_threads, n_threads);
+ 
+-    const llama_model * model   = llama_get_model(ctx);
+-    const llama_vocab * vocab   = llama_model_get_vocab(model);
+-    const int32_t       n_vocab = llama_vocab_n_tokens(vocab);
+-
+-    llama_token token = llama_vocab_get_add_bos(vocab) ? llama_vocab_bos(vocab) : std::rand() % n_vocab;
++    llama_token token = 2;
+ 
+     for (int i = 0; i < n_gen; i++) {
+         int res = llama_decode(ctx, llama_batch_get_one(&token, 1));
+@@ -2154,7 +2148,7 @@ static bool test_gen(llama_context * ctx, int n_gen, int n_threads) {
+             return false;
+         }
+         llama_synchronize(ctx);
+-        token = std::rand() % n_vocab;
++        token = 2;
+     }
+     return true;
+ }
